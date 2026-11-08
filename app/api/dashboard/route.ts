@@ -9,8 +9,8 @@ import type { CheckOutcome, CheckStatus, ProxyRow } from '@/lib/types'
 export const maxDuration = 60
 export const dynamic = 'force-dynamic'
 
-const CHECK_BATCH_SIZE = 10
-const CHECK_CONCURRENCY = 3
+const CHECK_BATCH_SIZE = 30
+const CHECK_CONCURRENCY = 15
 const EXPORT_LIMIT = 5000
 
 type Admin = ReturnType<typeof createAdminClient>

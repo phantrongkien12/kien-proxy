@@ -7,6 +7,8 @@ import type { CheckBatchResult } from '@/lib/types'
 
 const STORAGE_KEY = 'proxy-ledger:check-job'
 
+export type CheckFailure = { id: number; reason: string }
+
 export type CheckJobState = {
   running: boolean
   cursor: number
@@ -19,6 +21,7 @@ export type CheckJobState = {
   startedAt: number | null
   error: string | null
   resumable: boolean
+  recent: CheckFailure[]
 }
 
 const IDLE: CheckJobState = {
@@ -33,6 +36,7 @@ const IDLE: CheckJobState = {
   startedAt: null,
   error: null,
   resumable: false,
+  recent: [],
 }
 
 type CheckJobContextValue = {
@@ -71,7 +75,7 @@ export function CheckJobProvider({ children }: { children: ReactNode }) {
       if (!raw) return
       const saved = JSON.parse(raw) as CheckJobState
       if (saved.upperBound && saved.cursor < saved.upperBound) {
-        setState({ ...saved, running: false, resumable: true, error: null })
+        setState({ ...saved, running: false, resumable: true, error: null, recent: saved.recent ?? [] })
       } else {
         sessionStorage.removeItem(STORAGE_KEY)
       }
@@ -112,6 +116,10 @@ export function CheckJobProvider({ children }: { children: ReactNode }) {
             onlySuspect: current.onlySuspect,
           })
 
+          const failures = data.results
+            .filter((item) => item.status === 'dead' || item.status === 'suspect')
+            .map((item) => ({ id: item.id, reason: item.reason }))
+
           current = {
             ...current,
             cursor: data.cursor,
@@ -120,6 +128,7 @@ export function CheckJobProvider({ children }: { children: ReactNode }) {
             checked: current.checked + data.results.length,
             healthy: current.healthy + data.healthy,
             failed: current.failed + data.failed,
+            recent: [...failures, ...current.recent].slice(0, 6),
           }
           setState(current)
           persist(current)

@@ -4,7 +4,8 @@ import tls from 'node:tls'
 
 const DESTINATION = 'example.com'
 const DESTINATION_PORT = 443
-const PROBE_TIMEOUT_MS = 6000
+const PROBE_TIMEOUT_MS = 10000
+const CONNECT_TIMEOUT_MS = 6000
 
 export type ProbeTarget = {
   host: string
@@ -15,6 +16,25 @@ export type ProbeTarget = {
 }
 
 export type ProbeOutcome = { healthy: boolean; reason: string }
+
+const SOCKET_ERRORS: Record<string, string> = {
+  ECONNREFUSED: 'Bị từ chối kết nối',
+  ECONNRESET: 'Kết nối bị ngắt giữa chừng',
+  ETIMEDOUT: 'Hết thời gian kết nối',
+  EHOSTUNREACH: 'Không có đường tới host',
+  ENETUNREACH: 'Không có đường tới mạng',
+  ENOTFOUND: 'Không phân giải được tên miền',
+  EAI_AGAIN: 'Lỗi phân giải tên miền',
+  EPIPE: 'Kết nối đóng khi đang gửi',
+}
+
+/** Turns a raw socket failure into something an operator can act on. */
+function describeError(error: unknown) {
+  if (!(error instanceof Error)) return 'Lỗi không xác định'
+  const code = (error as NodeJS.ErrnoException).code
+  if (code && SOCKET_ERRORS[code]) return SOCKET_ERRORS[code]
+  return error.message
+}
 
 function isPublicIPv4(address: string) {
   const parts = address.split('.')
@@ -129,11 +149,26 @@ class ByteReader {
   }
 }
 
-function connect(host: string, port: number) {
+/**
+ * Connects with its own timer. A filtered address (SYN dropped, no RST) leaves
+ * the socket pending until the OS gives up, which is far longer than the probe
+ * budget, so the caller's deadline cannot be the only guard.
+ */
+function connect(host: string, port: number, timeoutMs: number) {
   return new Promise<net.Socket>((resolve, reject) => {
     const socket = net.connect({ host, port })
-    socket.once('connect', () => resolve(socket))
-    socket.once('error', reject)
+    const timer = setTimeout(() => {
+      socket.destroy()
+      reject(new Error('Hết thời gian kết nối'))
+    }, timeoutMs)
+    socket.once('connect', () => {
+      clearTimeout(timer)
+      resolve(socket)
+    })
+    socket.once('error', (error) => {
+      clearTimeout(timer)
+      reject(error)
+    })
   })
 }
 
@@ -197,6 +232,9 @@ export async function probeProxy(target: ProbeTarget): Promise<ProbeOutcome> {
   const address = await resolveTarget(target.host)
   if (!address) return { healthy: false, reason: 'Địa chỉ đích không hợp lệ' }
 
+  const startedAt = Date.now()
+  const remaining = () => Math.max(1500, PROBE_TIMEOUT_MS - (Date.now() - startedAt))
+
   let socket: net.Socket | null = null
   let secureSocket: tls.TLSSocket | null = null
   const deadline = setTimeout(() => {
@@ -205,7 +243,7 @@ export async function probeProxy(target: ProbeTarget): Promise<ProbeOutcome> {
   }, PROBE_TIMEOUT_MS)
 
   try {
-    socket = await connect(address, target.port)
+    socket = await connect(address, target.port, Math.min(CONNECT_TIMEOUT_MS, remaining()))
     const reader = new ByteReader(socket)
     await handshake(socket, reader, target)
 
@@ -223,7 +261,7 @@ export async function probeProxy(target: ProbeTarget): Promise<ProbeOutcome> {
 
     return { healthy: true, reason: 'Hoạt động' }
   } catch (error) {
-    return { healthy: false, reason: error instanceof Error ? error.message : 'Lỗi không xác định' }
+    return { healthy: false, reason: describeError(error) }
   } finally {
     clearTimeout(deadline)
     secureSocket?.destroy()

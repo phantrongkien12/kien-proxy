@@ -172,9 +172,22 @@ export default function ProxiesPage() {
           ) : (
             <p className="max-w-3xl text-[12px] leading-relaxed text-muted-foreground text-pretty">
               Mỗi proxy được kiểm tra bằng một kết nối TCP thật xuyên qua proxy tới example.com:443, kèm bắt tay TLS để
-              xác nhận đường truyền thông suốt. Proxy lỗi hai lần liên tiếp bị đánh dấu đã chết và có thể xoá khỏi sổ.
+              xác nhận đường truyền thông suốt. Lần lỗi đầu tiên chỉ đánh dấu nghi ngờ; phải lỗi lần thứ hai, cách lần
+              đầu ít nhất 30 giây, proxy mới thành đã chết và xoá được. Vì vậy hãy chạy Kiểm tra tất cả, rồi chạy Kiểm
+              tra proxy nghi ngờ để chốt danh sách chết.
             </p>
           )}
+
+          {job.recent.length ? (
+            <ul className="mt-3 flex flex-col gap-1 border-t border-border pt-3">
+              {job.recent.map((item, index) => (
+                <li key={`${item.id}-${index}`} className="flex items-baseline gap-2 text-[11px]">
+                  <span className="num text-muted-foreground">#{item.id}</span>
+                  <span className="text-destructive">{item.reason}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
 
           {job.error ? (
             <p role="alert" className="mt-3 border border-[#e6c9c6] bg-[#fbf1f0] px-3 py-2 text-[12px] text-destructive">
@@ -195,8 +208,8 @@ export default function ProxiesPage() {
       </Panel>
 
       <Panel>
-        <div className="grid gap-3 border-b border-border px-4 py-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="Tìm kiếm" className="sm:col-span-2 lg:col-span-1">
+        <div className="grid gap-3 border-b border-border px-4 py-4 sm:grid-cols-3">
+          <Field label="Tìm kiếm" className="sm:col-span-3">
             <input
               className="field"
               type="search"
@@ -308,7 +321,7 @@ export default function ProxiesPage() {
                     <td>
                       <Badge>{proxy.protocol}</Badge>
                     </td>
-                    <td className="font-mono text-[11px] text-muted-foreground">{proxy.node_id}</td>
+                    <td className="whitespace-nowrap font-mono text-[11px] text-muted-foreground">{proxy.node_id}</td>
                     <td className="num text-[11px] text-muted-foreground" title={formatDateTime(proxy.last_seen)}>
                       {relativeTime(proxy.last_seen)}
                     </td>
@@ -325,12 +338,12 @@ export default function ProxiesPage() {
                     </td>
                     <td>
                       <div className="flex justify-end gap-1.5">
-                        <button type="button" className="btn btn-ghost" onClick={() => void copy(proxy)}>
+                        <button type="button" className="btn" onClick={() => void copy(proxy)}>
                           Copy
                         </button>
                         <button
                           type="button"
-                          className="btn btn-ghost"
+                          className="btn"
                           onClick={() => void checkOne(proxy)}
                           disabled={checkingId === proxy.id}
                         >
