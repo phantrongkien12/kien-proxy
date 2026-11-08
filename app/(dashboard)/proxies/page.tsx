@@ -137,7 +137,7 @@ export default function ProxiesPage() {
               ) : (
                 <>
                   <button type="button" className="btn" onClick={() => start(true)}>
-                    Kiểm tra proxy nghi ngờ
+                    Kiểm tra lại proxy chết
                   </button>
                   <button type="button" className="btn btn-solid" onClick={() => start(false)}>
                     Kiểm tra tất cả
@@ -158,10 +158,10 @@ export default function ProxiesPage() {
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <span className="num text-[12px]">
                   {formatNumber(job.checked)}/{formatNumber(job.total)} proxy
-                  {job.onlySuspect ? ' nghi ngờ' : ''}
+                  {job.onlyDead ? ' chết' : ''}
                 </span>
                 <span className="num text-[11px] text-muted-foreground">
-                  {percent}% · {formatNumber(job.healthy)} sống · {formatNumber(job.failed)} lỗi
+                  {percent}% · {formatNumber(job.healthy)} sống · {formatNumber(job.failed)} chết
                   {job.running ? ' · đang chạy' : job.resumable ? ' · tạm dừng' : ' · hoàn tất'}
                 </span>
               </div>
@@ -172,9 +172,8 @@ export default function ProxiesPage() {
           ) : (
             <p className="max-w-3xl text-[12px] leading-relaxed text-muted-foreground text-pretty">
               Mỗi proxy được kiểm tra bằng một kết nối TCP thật xuyên qua proxy tới example.com:443, kèm bắt tay TLS để
-              xác nhận đường truyền thông suốt. Lần lỗi đầu tiên chỉ đánh dấu nghi ngờ; phải lỗi lần thứ hai, cách lần
-              đầu ít nhất 30 giây, proxy mới thành đã chết và xoá được. Vì vậy hãy chạy Kiểm tra tất cả, rồi chạy Kiểm
-              tra proxy nghi ngờ để chốt danh sách chết.
+              xác nhận đường truyền thông suốt. Kiểm tra thành công ghi Sống; kết nối lỗi hoặc hết thời gian chờ ghi
+              Chết ngay. Proxy chết có thể kiểm tra lại hoặc xoá. Proxy chưa được kiểm tra không được gán kết quả.
             </p>
           )}
 
@@ -197,7 +196,7 @@ export default function ProxiesPage() {
 
           <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-border pt-4">
             <span className="num text-[11px] text-muted-foreground">
-              {formatNumber(deadCount)} proxy đã chết đủ điều kiện xoá
+              {formatNumber(deadCount)} proxy chết có thể xoá
             </span>
             <button type="button" className="btn btn-danger" onClick={purgeDead} disabled={purging || deadCount === 0}>
               {purging ? <Spinner /> : null}

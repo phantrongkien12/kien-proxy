@@ -2,7 +2,7 @@ export const PROTOCOLS = ['HTTP', 'HTTPS', 'SOCKS4', 'SOCKS5'] as const
 
 export type Protocol = (typeof PROTOCOLS)[number]
 
-export type CheckStatus = 'untested' | 'healthy' | 'suspect' | 'dead'
+export type CheckStatus = 'untested' | 'healthy' | 'dead'
 
 export type ProxyRow = {
   id: number
@@ -54,7 +54,7 @@ export type SearchResult = {
 
 export type CheckOutcome = {
   id: number
-  status: CheckStatus | 'stale'
+  status: Exclude<CheckStatus, 'untested'> | 'stale'
   reason: string
 }
 

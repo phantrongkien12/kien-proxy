@@ -57,9 +57,8 @@ export function connectionString(proxy: Pick<ProxyRow, 'protocol' | 'host' | 'po
 
 export const CHECK_LABELS: Record<CheckStatus, string> = {
   untested: 'chưa kiểm tra',
-  healthy: 'hoạt động',
-  suspect: 'nghi ngờ',
-  dead: 'đã chết',
+  healthy: 'sống',
+  dead: 'chết',
 }
 
 export function checkTone(status: CheckStatus): 'solid' | 'plain' | 'danger' {

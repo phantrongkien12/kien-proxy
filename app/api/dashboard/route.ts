@@ -45,7 +45,10 @@ async function checkOne(admin: Admin, row: Pick<ProxyRow, 'id' | 'host' | 'port'
   if (error) return { id: row.id, status: 'stale', reason: error.message }
   const result = data as { status?: CheckStatus; stale?: boolean } | null
   if (result?.stale) return { id: row.id, status: 'stale', reason: 'Bản ghi đã thay đổi' }
-  return { id: row.id, status: result?.status ?? 'untested', reason: outcome.reason }
+  if (result?.status !== 'healthy' && result?.status !== 'dead') {
+    return { id: row.id, status: 'stale', reason: 'Không lưu được kết quả kiểm tra' }
+  }
+  return { id: row.id, status: result.status, reason: outcome.reason }
 }
 
 async function collectForExport(admin: Admin, filters: Record<string, unknown>, limit: number) {
@@ -203,13 +206,13 @@ export async function POST(request: NextRequest) {
 
   if (action === 'check-batch') {
     const cursor = Number(body.cursor ?? 0)
-    const onlySuspect = Boolean(body.onlySuspect)
+    const onlyDead = Boolean(body.onlyDead)
     const isFirst = !body.upperBound
     let upperBound = Number(body.upperBound ?? 0)
 
     if (isFirst) {
       let maxQuery = admin.from('proxies').select('id').order('id', { ascending: false }).limit(1)
-      if (onlySuspect) maxQuery = maxQuery.eq('check_status', 'suspect')
+      if (onlyDead) maxQuery = maxQuery.eq('check_status', 'dead')
       const { data: maxRow, error: maxError } = await maxQuery
       if (maxError) return fail(maxError.message, 500)
       upperBound = Number(maxRow?.[0]?.id ?? 0)
@@ -219,6 +222,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ results: [], cursor: 0, upperBound: 0, total: 0, done: true, healthy: 0, failed: 0 })
     }
 
+    let total: number | null = null
+    if (isFirst) {
+      let countQuery = admin.from('proxies').select('id', { count: 'exact', head: true }).lte('id', upperBound)
+      if (onlyDead) countQuery = countQuery.eq('check_status', 'dead')
+      const { count, error: countError } = await countQuery
+      if (countError) return fail(countError.message, 500)
+      total = count ?? 0
+    }
+
     let query = admin
       .from('proxies')
       .select('id,host,port,protocol,username,password,last_seen')
@@ -226,7 +238,7 @@ export async function POST(request: NextRequest) {
       .lte('id', upperBound)
       .order('id', { ascending: true })
       .limit(CHECK_BATCH_SIZE)
-    if (onlySuspect) query = query.eq('check_status', 'suspect')
+    if (onlyDead) query = query.eq('check_status', 'dead')
 
     const { data: rows, error } = await query
     if (error) return fail(error.message, 500)
@@ -236,14 +248,6 @@ export async function POST(request: NextRequest) {
     const nextCursor = batch.length ? batch[batch.length - 1].id : upperBound
     const done = batch.length < CHECK_BATCH_SIZE
 
-    let total: number | null = null
-    if (isFirst) {
-      let countQuery = admin.from('proxies').select('id', { count: 'exact', head: true }).lte('id', upperBound)
-      if (onlySuspect) countQuery = countQuery.eq('check_status', 'suspect')
-      const { count } = await countQuery
-      total = count ?? 0
-    }
-
     return NextResponse.json({
       results,
       cursor: nextCursor,
@@ -251,7 +255,7 @@ export async function POST(request: NextRequest) {
       total,
       done,
       healthy: results.filter((item) => item.status === 'healthy').length,
-      failed: results.filter((item) => item.status === 'dead' || item.status === 'suspect').length,
+      failed: results.filter((item) => item.status === 'dead').length,
     })
   }
 

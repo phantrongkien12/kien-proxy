@@ -159,12 +159,12 @@ export default function SettingsPage() {
           </li>
           <li className="text-pretty">
             <span className="text-foreground">Kiểm tra sức khoẻ</span> — mỗi proxy được thử bằng kết nối TCP thật xuyên
-            qua proxy tới example.com:443 kèm bắt tay TLS. Lỗi lần đầu là &ldquo;nghi ngờ&rdquo;, lỗi lần hai là
-            &ldquo;đã chết&rdquo;.
+            qua proxy tới example.com:443 kèm bắt tay TLS. Thành công ghi Sống; lỗi hoặc hết thời gian chờ ghi Chết
+            ngay sau lần kiểm tra đó.
           </li>
           <li className="text-pretty">
             <span className="text-foreground">Dọn dẹp</span> — chỉ proxy đã chết và không được ghi nhận lại sau lần
-            kiểm tra cuối mới bị xoá, nên một lần mạng chập chờn không làm mất dữ liệu tốt.
+            kiểm tra cuối mới được xoá bằng nút Xoá proxy chết. Dữ liệu mới gửi lại phải được kiểm tra lại.
           </li>
         </ul>
       </Panel>

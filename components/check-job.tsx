@@ -5,7 +5,7 @@ import { mutate } from 'swr'
 import { post } from '@/lib/hooks'
 import type { CheckBatchResult } from '@/lib/types'
 
-const STORAGE_KEY = 'proxy-ledger:check-job'
+const STORAGE_KEY = 'proxy-ledger:check-job:v2'
 
 export type CheckFailure = { id: number; reason: string }
 
@@ -17,7 +17,7 @@ export type CheckJobState = {
   checked: number
   healthy: number
   failed: number
-  onlySuspect: boolean
+  onlyDead: boolean
   startedAt: number | null
   error: string | null
   resumable: boolean
@@ -32,7 +32,7 @@ const IDLE: CheckJobState = {
   checked: 0,
   healthy: 0,
   failed: 0,
-  onlySuspect: false,
+  onlyDead: false,
   startedAt: null,
   error: null,
   resumable: false,
@@ -41,7 +41,7 @@ const IDLE: CheckJobState = {
 
 type CheckJobContextValue = {
   state: CheckJobState
-  start: (onlySuspect: boolean) => void
+  start: (onlyDead: boolean) => void
   resume: () => void
   stop: () => void
   reset: () => void
@@ -71,6 +71,7 @@ export function CheckJobProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     try {
+      sessionStorage.removeItem('proxy-ledger:check-job')
       const raw = sessionStorage.getItem(STORAGE_KEY)
       if (!raw) return
       const saved = JSON.parse(raw) as CheckJobState
@@ -93,14 +94,14 @@ export function CheckJobProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const run = useCallback(
-    async (onlySuspect: boolean, from?: CheckJobState) => {
+    async (onlyDead: boolean, from?: CheckJobState) => {
       if (runningRef.current) return
       runningRef.current = true
       stopRef.current = false
 
       let current: CheckJobState = from
         ? { ...from, running: true, error: null, resumable: false }
-        : { ...IDLE, running: true, onlySuspect, startedAt: Date.now() }
+        : { ...IDLE, running: true, onlyDead, startedAt: Date.now() }
 
       setState(current)
       persist(current)
@@ -113,11 +114,11 @@ export function CheckJobProvider({ children }: { children: ReactNode }) {
             action: 'check-batch',
             cursor: current.cursor,
             upperBound: current.upperBound,
-            onlySuspect: current.onlySuspect,
+            onlyDead: current.onlyDead,
           })
 
           const failures = data.results
-            .filter((item) => item.status === 'dead' || item.status === 'suspect')
+            .filter((item) => item.status === 'dead')
             .map((item) => ({ id: item.id, reason: item.reason }))
 
           current = {
@@ -162,8 +163,8 @@ export function CheckJobProvider({ children }: { children: ReactNode }) {
   const value = useMemo<CheckJobContextValue>(
     () => ({
       state,
-      start: (onlySuspect: boolean) => void run(onlySuspect),
-      resume: () => void run(state.onlySuspect, state),
+      start: (onlyDead: boolean) => void run(onlyDead),
+      resume: () => void run(state.onlyDead, state),
       stop: () => {
         stopRef.current = true
       },
