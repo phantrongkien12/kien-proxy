@@ -16,7 +16,8 @@ usage() {
     'Máy mới, một lệnh: sudo sh install_worker.sh --url URL --node MA_VPS --token TOKEN' \
     'Hoặc dùng file tải từ dashboard: sudo sh install_worker.sh --config FILE' \
     'Lần sau: sudo sh install_worker.sh (giữ nguyên token và mã VPS)' \
-    'Hỗ trợ systemd/OpenRC; cần root, Python 3, requests, ZMap và quyền raw socket.'
+    'Hỗ trợ systemd, OpenRC và máy không có init (container/LXC/WSL).' \
+    'Cần root, Python 3, requests, ZMap và quyền raw socket.'
 }
 fail() { printf '%s\n' "$1" >&2; exit 1; }
 
@@ -68,7 +69,7 @@ if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
 elif command -v rc-service >/dev/null 2>&1 && command -v rc-update >/dev/null 2>&1; then
   INIT=openrc
 else
-  fail 'VPS cần systemd hoặc OpenRC đang hoạt động. Container/no-init không được installer này hỗ trợ.'
+  INIT=none
 fi
 
 pick_python() {
@@ -174,7 +175,7 @@ EOF
   systemctl is-active --quiet kien-proxy.service
   printf '%s\n' 'Đã bật tự chạy sau reboot. Xem log: sudo journalctl -u kien-proxy -f' \
     'Lần sau: sudo systemctl restart kien-proxy (không cần nhập lại cấu hình).'
-else
+elif [ "$INIT" = openrc ]; then
   touch /var/log/kien-proxy.log
   chmod 600 /var/log/kien-proxy.log
   cat > /etc/init.d/kien-proxy <<EOF
@@ -201,6 +202,110 @@ EOF
   rc-service kien-proxy restart
   printf '%s\n' 'Đã bật tự chạy sau reboot. Xem log: sudo tail -f /var/log/kien-proxy.log' \
     'Lần sau: sudo rc-service kien-proxy restart (không cần nhập lại cấu hình).'
+else
+  touch /var/log/kien-proxy.log
+  chmod 600 /var/log/kien-proxy.log
+  cat > /usr/local/bin/kien-proxy <<EOF
+#!/bin/sh
+# Điều khiển worker trên máy không có systemd/OpenRC (container, LXC, WSL).
+set -u
+APP=$APP
+CONFIG=$CONFIG
+STATE=$STATE
+PYTHON=$PYTHON
+PIDFILE=/run/kien-proxy.pid
+LOGFILE=/var/log/kien-proxy.log
+
+running() {
+  [ -f "\$PIDFILE" ] || return 1
+  pid=\$(cat "\$PIDFILE" 2>/dev/null) || return 1
+  [ -n "\$pid" ] || return 1
+  kill -0 "\$pid" 2>/dev/null
+}
+
+run() {
+  echo \$\$ > "\$PIDFILE"
+  export KIEN_PROXY_CONFIG="\$CONFIG"
+  export PROXY_QUEUE_DIR="\$STATE/queue"
+  export SCANNER_AUTO=1
+  cd "\$APP" || exit 1
+  while :; do
+    "\$PYTHON" -u "\$APP/geo_proxy_scanner.py" >>"\$LOGFILE" 2>&1
+    printf '%s worker thoát, chạy lại sau 15s\n' "\$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >>"\$LOGFILE"
+    sleep 15
+  done
+}
+
+start() {
+  if running; then
+    printf '%s\n' "kien-proxy đang chạy (pid \$(cat "\$PIDFILE"))."
+    return 0
+  fi
+  if command -v setsid >/dev/null 2>&1; then
+    setsid "\$0" run </dev/null >>"\$LOGFILE" 2>&1 &
+  else
+    nohup "\$0" run </dev/null >>"\$LOGFILE" 2>&1 &
+  fi
+  sleep 1
+  if running; then
+    printf '%s\n' "Đã chạy kien-proxy (pid \$(cat "\$PIDFILE")). Log: \$LOGFILE"
+  else
+    printf '%s\n' "Không khởi động được. Xem \$LOGFILE" >&2
+    return 1
+  fi
+}
+
+stop() {
+  pid=\$(cat "\$PIDFILE" 2>/dev/null || true)
+  if [ -n "\$pid" ]; then
+    kill -TERM "-\$pid" 2>/dev/null || kill -TERM "\$pid" 2>/dev/null || true
+  fi
+  if command -v pkill >/dev/null 2>&1; then
+    pkill -f "\$APP/geo_proxy_scanner.py" 2>/dev/null || true
+  fi
+  rm -f "\$PIDFILE"
+  printf '%s\n' 'Đã dừng kien-proxy.'
+}
+
+case "\${1:-status}" in
+  start) start ;;
+  stop) stop ;;
+  restart) stop; start ;;
+  status)
+    if running; then
+      printf '%s\n' "kien-proxy đang chạy (pid \$(cat "\$PIDFILE"))."
+    else
+      printf '%s\n' 'kien-proxy không chạy.'
+      exit 1
+    fi
+    ;;
+  logs) tail -f "\$LOGFILE" ;;
+  run) run ;;
+  *) printf '%s\n' 'Dùng: kien-proxy {start|stop|restart|status|logs}' >&2; exit 2 ;;
+esac
+EOF
+  chmod 755 /usr/local/bin/kien-proxy
+  install -d -m 755 /etc/profile.d
+  if [ -d /etc/cron.d ] && command -v crontab >/dev/null 2>&1; then
+    printf '%s\n' '@reboot root /usr/local/bin/kien-proxy start >/dev/null 2>&1' > /etc/cron.d/kien-proxy
+    chmod 644 /etc/cron.d/kien-proxy
+    AUTOSTART='cron @reboot (/etc/cron.d/kien-proxy)'
+  elif [ -f /etc/rc.local ]; then
+    if ! grep -q 'kien-proxy start' /etc/rc.local 2>/dev/null; then
+      printf '%s\n' '/usr/local/bin/kien-proxy start >/dev/null 2>&1' >> /etc/rc.local
+    fi
+    AUTOSTART='/etc/rc.local'
+  else
+    cat > /etc/profile.d/kien-proxy.sh <<'PROFILE'
+[ -x /usr/local/bin/kien-proxy ] && /usr/local/bin/kien-proxy start >/dev/null 2>&1
+PROFILE
+    chmod 644 /etc/profile.d/kien-proxy.sh
+    AUTOSTART='/etc/profile.d/kien-proxy.sh (chạy khi có người đăng nhập)'
+  fi
+  /usr/local/bin/kien-proxy start || true
+  printf '%s\n' "Máy không có systemd/OpenRC nên dùng chế độ chạy nền. Tự chạy lại: $AUTOSTART" \
+    'Xem log: sudo kien-proxy logs' \
+    'Lần sau: sudo kien-proxy restart (không cần nhập lại cấu hình).'
 fi
 printf '%s\n' 'Cấu hình bí mật: /etc/kien-proxy/worker.json (root, mode 600).' \
   'Hàng đợi bền vững: /var/lib/kien-proxy/queue. Không xóa queue khi khởi động lại.'

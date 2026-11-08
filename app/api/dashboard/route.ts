@@ -275,6 +275,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ id, token })
   }
 
+  if (action === 'rotate-token') {
+    const id = String(body.id ?? '').trim()
+    if (!id) return fail('Thiếu mã VPS')
+    const token = `pl_${randomBytes(24).toString('hex')}`
+    const tokenHash = createHash('sha256').update(token).digest('hex')
+    const { data, error } = await admin.from('nodes').update({ token_hash: tokenHash }).eq('id', id).select('id').maybeSingle()
+    if (error) return fail(error.message, 500)
+    if (!data) return fail('Không tìm thấy VPS', 404)
+    return NextResponse.json({ id, token })
+  }
+
   if (action === 'remove-node') {
     const id = String(body.id ?? '').trim()
     if (!id) return fail('Thiếu mã VPS')

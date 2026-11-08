@@ -90,6 +90,11 @@ sudo sh "$INSTALLER" --config ./kien-proxy-worker.json`
           Lệnh có token nên sẽ nằm trong lịch sử shell của VPS; chạy <code className="font-mono text-foreground">history -c</code> sau khi cài nếu máy có nhiều người dùng.
           Không cần <code className="font-mono text-foreground">git clone</code> và không cần chuyển file lên máy.
         </p>
+        <p className="text-pretty text-muted-foreground">
+          Máy có systemd hoặc OpenRC thì installer tạo dịch vụ <code className="font-mono text-foreground">kien-proxy</code>.
+          Container, LXC hay WSL không có init vẫn cài được: installer chuyển sang chế độ chạy nền và tự đăng ký khởi động lại,
+          điều khiển bằng <code className="font-mono text-foreground">sudo kien-proxy status|restart|logs</code>.
+        </p>
         <details className="border border-border px-3 py-3">
           <summary className="cursor-pointer text-foreground">Cách khác: dùng file cấu hình (không để token trong lịch sử shell)</summary>
           <div className="flex flex-col gap-3 pt-3">

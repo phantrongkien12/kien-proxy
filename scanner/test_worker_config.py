@@ -190,6 +190,14 @@ assert scanner.INGEST_URL == config['url'] + '/api/ingest'
             self.assertIn(flag, script)
         self.assertIn('Chỉ dùng một trong --config hoặc --url/--node/--token.', script)
 
+    def test_installer_supports_hosts_without_init_system(self):
+        script = (Path(__file__).resolve().parent / 'install_worker.sh').read_text(encoding='utf-8')
+        self.assertIn('INIT=none', script)
+        self.assertIn('/usr/local/bin/kien-proxy', script)
+        self.assertIn('@reboot root /usr/local/bin/kien-proxy start', script)
+        self.assertIn('/etc/profile.d/kien-proxy.sh', script)
+        self.assertNotIn('Container/no-init không được installer này hỗ trợ', script)
+
     def test_installer_does_not_trust_files_beside_downloaded_script(self):
         script = (Path(__file__).resolve().parent / 'install_worker.sh').read_text(encoding='utf-8')
         self.assertNotIn('SCRIPT_DIR', script)

@@ -16,6 +16,7 @@ export default function NodesPage() {
   const [nodeId, setNodeId] = useState('')
   const [creating, setCreating] = useState(false)
   const [removing, setRemoving] = useState<string | null>(null)
+  const [rotating, setRotating] = useState<string | null>(null)
   const [issued, setIssued] = useState<Issued | null>(null)
   const [origin, setOrigin] = useState('')
 
@@ -39,6 +40,20 @@ export default function NodesPage() {
       push(caught instanceof Error ? caught.message : 'Không tạo được VPS', 'error')
     } finally {
       setCreating(false)
+    }
+  }
+
+  async function rotateToken(id: string) {
+    setRotating(id)
+    try {
+      const result = await post<Issued>({ action: 'rotate-token', id })
+      setIssued(result)
+      push(`Đã đổi token cho ${id}. Token cũ hết hiệu lực ngay; chạy lại lệnh cài mới trên VPS đó.`)
+      await revalidate()
+    } catch (caught) {
+      push(caught instanceof Error ? caught.message : 'Không đổi được token', 'error')
+    } finally {
+      setRotating(null)
     }
   }
 
@@ -150,6 +165,15 @@ export default function NodesPage() {
                       <td className="num text-[11px] text-muted-foreground">{formatDateTime(node.created_at)}</td>
                       <td>
                         <div className="flex justify-end gap-1.5">
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            onClick={() => void rotateToken(node.id)}
+                            disabled={rotating === node.id}
+                          >
+                            {rotating === node.id ? <Spinner /> : null}
+                            Đổi token
+                          </button>
                           <button
                             type="button"
                             className="btn btn-danger"

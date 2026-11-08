@@ -136,10 +136,21 @@ ZMap và scanner chạy tr��n VPS, **không chạy bên trong Vercel**. Verc
 2. Đặt mã riêng cho máy, ví dụ `VPS-HN-01`, rồi chọn **Tạo token**.
 3. Kiểm tra **URL dashboard đã deploy**, rồi chọn **Copy lệnh cài một lần** (hoặc **Tải file cấu hình** nếu muốn tránh token trong lịch sử shell). URL và mã/token vừa cấp được điền sẵn; không cần lấy Supabase key.
 4. Giữ file bí mật. Token chỉ xuất hiện trong lần tạo này; database lưu hash nên **không thể đọc lại token cũ**. Nếu token cũ đã lưu trên VPS, cứ dùng lại, không tạo lại.
+5. Token bị lộ (dán vào chat, commit nhầm, máy dùng chung): bấm **Đổi token** ở cột Thao tác. Token cũ hết hiệu lực ngay, proxy của VPS đó vẫn giữ nguyên, rồi chạy lại lệnh cài mới trên VPS.
 
 ### Cài lần đầu trên VPS — một lệnh, không cần file
 
-VPS cần Linux, root/sudo, quyền raw socket và **systemd hoặc OpenRC**. Installer hỗ trợ package manager `apt-get`, `dnf`, `yum`, `apk`, `pacman`, `zypper`. Kho gói phải có ZMap/requests; một số bản RHEL/Alma/Rocky hoặc Alpine cần bật kho EPEL/community tương ứng. Container không có init/raw socket không được coi là VPS tương thích.
+VPS cần Linux, root/sudo và quyền raw socket. Installer hỗ trợ package manager `apt-get`, `dnf`, `yum`, `apk`, `pacman`, `zypper`. Kho gói phải có ZMap/requests; một số bản RHEL/Alma/Rocky hoặc Alpine cần bật kho EPEL/community tương ứng.
+
+Ba chế độ khởi động, installer tự chọn:
+
+| Máy | Cách chạy | Điều khiển |
+| --- | --- | --- |
+| Có systemd | dịch vụ `kien-proxy.service` | `sudo systemctl status kien-proxy` |
+| Có OpenRC (Alpine) | dịch vụ `/etc/init.d/kien-proxy` | `sudo rc-service kien-proxy status` |
+| Không có init (container, LXC, WSL) | tiến trình nền tự chạy lại | `sudo kien-proxy status` |
+
+Máy không có init vẫn cài được: installer tạo lệnh `kien-proxy` (start/stop/restart/status/logs) và tự đăng ký khởi động lại qua `cron @reboot`, `/etc/rc.local`, hoặc `/etc/profile.d/kien-proxy.sh` — dùng cái nào máy có, và in ra cái đã dùng. Lưu ý: container không giữ tiến trình qua lần tạo lại container, nên nếu nhà cung cấp xoá container thì phải chạy lại lệnh cài.
 
 Máy mới tinh chỉ cần SSH vào và dán **một lệnh** (thay URL, mã VPS và token bằng thông tin ở bước trên):
 
@@ -195,6 +206,14 @@ Với OpenRC (ví dụ Alpine dùng OpenRC):
 sudo rc-service kien-proxy status
 sudo tail -f /var/log/kien-proxy.log
 sudo rc-service kien-proxy restart
+```
+
+Với máy không có init (container, LXC, WSL):
+
+```bash
+sudo kien-proxy status
+sudo kien-proxy logs
+sudo kien-proxy restart
 ```
 
 Muốn cập nhật mã worker, tải lại installer rồi chạy **không có `--config`**. Installer giữ nguyên token, mã VPS, tùy chọn và queue:
