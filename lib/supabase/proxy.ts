@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 // /api/ingest authenticates with its own bearer token, so it must stay reachable
 // without a session cookie — VPS machines have no browser session.
-const PUBLIC_PATHS = ['/login', '/auth', '/api/ingest']
+const PUBLIC_PATHS = ['/login', '/auth', '/api/ingest', '/api/seed']
 
 function isPublic(pathname: string) {
   return PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`))

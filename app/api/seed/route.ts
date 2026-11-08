@@ -1,29 +1,18 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { createClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
 
-async function requireUser() {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  return user
-}
-
 export async function POST(request: NextRequest) {
-  const user = await requireUser()
-  if (!user) return NextResponse.json({ error: 'Chưa đăng nhập' }, { status: 401 })
-
   const admin = createAdminClient()
 
-  // 1. Insert mock nodes
+  // 1. Insert mock nodes across multiple global regions
   const nodes = [
-    { id: 'wrk_us_east_1', token_hash: 'demo_hash_1', total: 18, last_seen: new Date().toISOString() },
-    { id: 'wrk_sg_01', token_hash: 'demo_hash_2', total: 15, last_seen: new Date().toISOString() },
-    { id: 'wrk_vn_hanoi_01', token_hash: 'demo_hash_3', total: 22, last_seen: new Date().toISOString() },
-    { id: 'wrk_eu_frankfurt_01', token_hash: 'demo_hash_4', total: 14, last_seen: new Date().toISOString() },
+    { id: 'wrk_us_east_1', token_hash: 'demo_hash_1', total: 25, last_seen: new Date().toISOString() },
+    { id: 'wrk_sg_01', token_hash: 'demo_hash_2', total: 19, last_seen: new Date().toISOString() },
+    { id: 'wrk_vn_hanoi_01', token_hash: 'demo_hash_3', total: 34, last_seen: new Date().toISOString() },
+    { id: 'wrk_eu_frankfurt_01', token_hash: 'demo_hash_4', total: 21, last_seen: new Date().toISOString() },
+    { id: 'wrk_jp_tokyo_01', token_hash: 'demo_hash_5', total: 28, last_seen: new Date().toISOString() },
   ]
 
   const nodeResults = []
