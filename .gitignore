@@ -8,9 +8,22 @@ __v0_jsx-dev-runtime.ts
 .vercel/
 
 # Environment variables
-.env*.local
+.env
+.env.*
+!.env.example
+
+# Private scanner configuration and output
+fleet_config.json
+ledger_config.json
+fleet_worker_bundle.zip
+proxy_queue/
+
+# Generated Python files
+__pycache__/
+*.py[cod]
 
 # Common ignores
 node_modules
 .next/
 .DS_Store
+*.tsbuildinfo
