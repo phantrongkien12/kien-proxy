@@ -28,9 +28,9 @@ Kho không tự được điền bằng seed. Muốn thấy proxy thật, cần 
 
 ### Scanner
 
-- VPS Linux; script khởi động được thiết kế cho Debian/Ubuntu.
-- `/usr/bin/python3`, thư viện `requests` cho Python hệ thống và ZMap.
-- Quyền root khi dùng `start_worker.sh` vì ZMap cần raw socket.
+- VPS Linux có systemd/OpenRC; installer hỗ trợ các package manager phổ biến. Startup thủ công cũ dành cho Debian/Ubuntu.
+- Python 3, thư viện `requests` cho Python hệ thống và ZMap; installer tự cài nếu kho gói của distro có sẵn.
+- Quyền root/sudo và raw socket vì ZMap cần thao tác mạng tương ứng.
 - Kết nối đến app đã deploy, IPdeny và đích kiểm tra TLS.
 
 Chỉ vận hành scanner trên phạm vi bạn được phép kiểm tra và theo chính sách của nhà cung cấp VPS. Scanner tải dải IP theo quốc gia từ IPdeny; lựa chọn một quốc gia không đồng nghĩa có quyền quét mọi IP trong quốc gia đó.
@@ -128,26 +128,77 @@ Nếu tiếp tục làm việc trong v0, có thể dùng **Publish**. Worker ph�
 
 ZMap và scanner chạy trên VPS, **không chạy bên trong Vercel**. Vercel chỉ nhận dữ liệu, hiển thị dashboard và thực hiện các phép kiểm tra proxy theo yêu cầu.
 
-## 5. Kết nối một VPS bằng token riêng
+## 5. Một VPS Linux: cài một lần, không nhập lại cấu hình
 
-1. Đăng nhập dashboard, mở trang **VPS**.
-2. Nhập mã máy, ví dụ `VPS-HN-01`, rồi chọn **Tạo token**.
-3. Sao chép và giữ token ngay: giao diện chỉ hiển thị token mới một lần, database lưu hash.
-4. Trên VPS đã clone repository, chạy từ thư mục gốc:
+### Lấy cấu hình từ chính tài khoản
+
+1. Mở **dashboard đã deploy**, đăng nhập tài khoản của bạn rồi vào **VPS**. Nếu chưa thấy nút tải cấu hình, deploy phiên bản mới của repo/Publish trước.
+2. Đặt mã riêng cho máy, ví dụ `VPS-HN-01`, rồi chọn **Tạo token**.
+3. Kiểm tra **URL dashboard đã deploy**, chọn **Tải cấu hình VPS** để nhận `kien-proxy-worker.json`. URL và mã/token vừa cấp được điền vào file tự động; không cần lấy Supabase key.
+4. Giữ file bí mật. Token chỉ xuất hiện trong lần tạo này; database lưu hash nên **không thể đọc lại token cũ**. Nếu token cũ đã lưu trên VPS, cứ dùng lại, không tạo lại.
+
+### Cài lần đầu trên VPS
+
+VPS cần Linux, root/sudo, quyền raw socket và **systemd hoặc OpenRC**. Installer hỗ trợ package manager `apt-get`, `dnf`, `yum`, `apk`, `pacman`, `zypper`. Kho gói phải có ZMap/requests; một số bản RHEL/Alma/Rocky hoặc Alpine cần bật kho EPEL/community tương ứng. Container không có init/raw socket không được coi là VPS tương thích.
+
+Chuyển file vừa tải bằng SFTP hoặc chạy lệnh sau **trên máy đang giữ file**, thay USER/IP bằng thông tin SSH của bạn:
 
 ```bash
-sudo env \
-  LEDGER_URL='https://your-app.vercel.app' \
-  VPS_ID='VPS-HN-01' \
-  VPS_TOKEN='TOKEN_RIENG_VUA_TAO' \
-  bash scanner/start_worker.sh
+scp ./kien-proxy-worker.json USER@VPS_IP:~/kien-proxy-worker.json
 ```
 
-Thay URL, mã máy và token bằng thông tin thật. Script sẽ cài ZMap và `python3-requests` nếu thiếu, khi được chạy bằng root trên Debian/Ubuntu.
+SSH vào VPS, đứng tại thư mục chứa file rồi chạy:
 
-Trong terminal tương tác, scanner hiện menu chọn chế độ, mã quốc gia, cổng và số luồng. Nhấn `Ctrl+C` để dừng. Script không tự cài một dịch vụ systemd chạy nền.
+```bash
+chmod 600 ./kien-proxy-worker.json &&
+INSTALLER="$(mktemp /tmp/kien-proxy-install.XXXXXX)" &&
+curl -fsSL https://raw.githubusercontent.com/phantrongkien12/kien-proxy/master/scanner/install_worker.sh -o "$INSTALLER" &&
+sudo sh "$INSTALLER" --config ./kien-proxy-worker.json
+```
 
-Chọn **một** cách cấu hình: token riêng hoặc fleet. `FLEET_TOKEN`/`fleet_config.json` được scanner ưu tiên, nên không để cấu hình fleet cũ ghi đè cách dùng token riêng.
+Nếu máy có `wget` thay vì `curl`, thay dòng tải bằng `wget -O "$INSTALLER" https://raw.githubusercontent.com/phantrongkien12/kien-proxy/master/scanner/install_worker.sh &&` rồi chạy dòng installer. Nếu đã clone repo, có thể chạy `sudo sh scanner/install_worker.sh --config /duong-dan/kien-proxy-worker.json` trực tiếp, không cần tải script riêng. Đã đăng nhập root thì bỏ `sudo` (hoặc dùng `doas` nếu hệ thống của bạn cấp quyền bằng doas). Bộ cài luôn tải các module từ repo HTTPS, không tự lấy file Python nằm cạnh script trong thư mục tạm.
+
+Installer cài dependency còn thiếu, lấy mã worker, lưu config quyền `600` và bật dịch vụ **`kien-proxy`**. Mặc định scanner chạy random liên tục, không hỏi menu; không cần giữ cửa sổ SSH mở. Chỉ quét các mục tiêu được phép và tuân thủ chính sách nhà cung cấp VPS.
+
+### Những lần sau
+
+**Reboot VPS: không phải chạy lệnh cài, đăng nhập dashboard hay nhập token lại.** Dịch vụ đã được bật tự khởi động.
+
+Với systemd (Ubuntu/Debian và phần lớn distro):
+
+```bash
+sudo systemctl status kien-proxy
+sudo journalctl -u kien-proxy -f
+sudo systemctl restart kien-proxy
+```
+
+Với OpenRC (ví dụ Alpine dùng OpenRC):
+
+```bash
+sudo rc-service kien-proxy status
+sudo tail -f /var/log/kien-proxy.log
+sudo rc-service kien-proxy restart
+```
+
+Muốn cập nhật mã worker, tải lại installer rồi chạy **không có `--config`**. Installer giữ nguyên token, mã VPS, tùy chọn và queue:
+
+```bash
+INSTALLER="$(mktemp /tmp/kien-proxy-install.XXXXXX)" &&
+curl -fsSL https://raw.githubusercontent.com/phantrongkien12/kien-proxy/master/scanner/install_worker.sh -o "$INSTALLER" &&
+sudo sh "$INSTALLER"
+```
+
+| Nơi lưu trên VPS | Nội dung |
+| --- | --- |
+| `/etc/kien-proxy/worker.json` | URL, mã VPS, token và tùy chọn; chỉ root đọc được |
+| `/var/lib/kien-proxy/queue/` | Các lô thật chờ gửi; không xóa khi restart/cập nhật |
+| `/opt/kien-proxy/` | Mã scanner và blocklist, không phải nơi lưu token |
+
+Muốn đổi chế độ/cổng/threads, sửa đối tượng `options` trong `/etc/kien-proxy/worker.json` bằng các tên biến ở mục 6, rồi restart dịch vụ; giữ nguyên các trường URL/mã/token. Không đưa file vào GitHub hoặc chat. Giữ bản sao riêng tư nếu cần khôi phục sau khi cài lại OS/xóa VPS: dữ liệu trên đĩa đã bị xóa thì không thể tự giữ lại.
+
+**Mỗi cấu hình token riêng chỉ dành cho một VPS.** Nếu muốn dùng một cấu hình tài khoản chung cho nhiều VPS mới mà không tạo token từng máy, dùng fleet ở mục 6. Không sao chép nguyên `/etc/kien-proxy/worker.json` sau khi cài sang các VPS khác vì sẽ bị trùng mã.
+
+Cách chạy thủ công cũ `LEDGER_URL`/`VPS_ID`/`VPS_TOKEN` với `scanner/start_worker.sh` vẫn được giữ. Khi đã có file cấu hình cài đặt, scanner tự nạp file này và không hỏi lại; không dùng cả token riêng lẫn fleet cho cùng một worker.
 
 Nếu lộ token riêng, xóa VPS đó trên dashboard rồi tạo lại token. **Xóa VPS cũng xóa proxy và lịch sử lô liên quan**, nên cần cân nhắc trước thao tác này.
 
@@ -170,15 +221,17 @@ Công cụ in giá trị token để bạn đặt vào biến **`FLEET_TOKEN` c�
 
 ### Trên mỗi VPS
 
-Chuyển gói ZIP bằng kênh riêng, giải nén vào thư mục worker, rồi chạy từ thư mục đó:
+Chuyển gói ZIP bằng kênh riêng, giải nén vào thư mục worker, rồi chạy một lần từ thư mục đó:
 
 ```bash
-sudo env LEDGER_URL='https://your-app.vercel.app' bash start_worker.sh
+sudo sh install_worker.sh --config ./fleet_config.json
 ```
 
-`LEDGER_URL` vẫn cần được truyền trên worker và phải khớp URL trong `fleet_config.json`. Backend Next.js không cần biến này; worker mới là nơi đọc `LEDGER_URL`.
+URL và fleet token được đọc từ file, không phải gõ lại hay `export` mỗi lần. Installer tự sinh một mã `wrk_*` riêng cho từng VPS và lưu cùng config trong `/etc/kien-proxy/worker.json`. Mã này **không đổi sau reboot/cài lại installer với cùng cấu hình**, worker tự đăng ký khi gửi lô hợp lệ đầu tiên.
 
-Worker tự sinh mã `wrk_<hostname>_<boot-id-hash>` và tự đăng ký khi gửi lô hợp lệ đầu tiên. Muốn mã ổn định qua các lần khởi động, đặt `WORKER_ID` riêng cho từng VPS, bắt đầu bằng `wrk_`. Không dùng cùng một `WORKER_ID` cho nhiều máy.
+Có thể dùng lại **file fleet gốc chưa có trường `node`** cho các VPS mới. Không clone file worker đã cài vì file đó đã chứa mã riêng. Các lệnh xem log/restart/cập nhật và yêu cầu distro giống mục 5.
+
+Startup cũ `sudo env LEDGER_URL='https://your-app.vercel.app' bash start_worker.sh` vẫn hoạt động nhưng không tự cài dịch vụ. Nếu không có cấu hình cài đặt, nó dùng quy tắc cũ `wrk_<hostname>_<boot-id-hash>`; đặt `WORKER_ID` riêng nếu muốn giữ mã ở cách chạy thủ công này.
 
 **Công cụ chỉ tạo cấu hình/gói worker, không mua hay tự tạo VPS.** Bạn tự phân phối gói bằng template hoặc quy trình triển khai của mình.
 
@@ -186,12 +239,13 @@ Worker tự sinh mã `wrk_<hostname>_<boot-id-hash>` và tự đăng ký khi g�
 
 | Biến | Mặc định | Ý nghĩa |
 | --- | --- | --- |
-| `LEDGER_URL` | Không có | URL app; scanner ghép thêm `/api/ingest` |
+| `KIEN_PROXY_CONFIG` | `/etc/kien-proxy/worker.json` nếu tồn tại | File cấu hình cài một lần; tự nạp URL, token, mã và options |
+| `LEDGER_URL` | Từ file cấu hình nếu có | URL app; scanner ghép thêm `/api/ingest` |
 | `LEDGER_INGEST_URL` | Từ `LEDGER_URL` | Ghi đè endpoint đầy đủ, phải kết thúc bằng `/api/ingest` |
-| `VPS_ID`, `VPS_TOKEN` | Không có | Cặp thông tin của chế độ token riêng |
-| `FLEET_TOKEN` | Đọc từ file nếu có | Token chung; nếu tự đặt phải dài 32–256 ký tự |
-| `WORKER_ID` | Tự sinh | Mã worker khi chạy fleet |
-| `SCANNER_AUTO` | Theo terminal | `1` chạy không hỏi; script chọn `0` nếu có terminal tương tác, `1` nếu không |
+| `VPS_ID`, `VPS_TOKEN` | Từ file cấu hình nếu có | Mã/token của VPS đã cài; vẫn có thể truyền môi trường cho cách chạy thủ công |
+| `FLEET_TOKEN` | Đọc từ file nếu có | Token chung cho chế độ fleet cũ; file cấu hình cài đặt có thông tin riêng được ưu tiên |
+| `WORKER_ID` | Tự sinh | Chỉ áp dụng cho cách chạy fleet cũ, chưa có file cấu hình cài đặt |
+| `SCANNER_AUTO` | `1` khi đã cài | Dịch vụ không hỏi menu; startup cũ chưa lưu cấu hình chọn theo terminal |
 | `SCANNER_MODE` | `random` khi auto | `country` hoặc `random` |
 | `SCANNER_COUNTRY` | `VN` | Mã quốc gia khi dùng `country` |
 | `SCANNER_FOLLOW_RANDOM` | `1` | Sau chế độ country, có chuyển sang random liên tục hay không |
@@ -201,7 +255,7 @@ Worker tự sinh mã `wrk_<hostname>_<boot-id-hash>` và tự đăng ký khi g�
 | `ZMAP_MAX_TARGETS` | `100000` | Giới hạn mục tiêu mỗi lượt ZMap trên một cổng |
 | `PATCH_MIN_SECONDS` | `60` | Khoảng thời gian tối thiểu cho một vòng patch random |
 | `PROXY_VERIFY_TIMEOUT` | `5` | Timeout xác minh của scanner, tính bằng giây |
-| `PROXY_QUEUE_DIR` | `proxy_queue/` cạnh file scanner | Nơi giữ lô đang chờ gửi |
+| `PROXY_QUEUE_DIR` | `/var/lib/kien-proxy/queue` khi cài dịch vụ | Nơi giữ lô đang chờ gửi; cách chạy cũ mặc định `proxy_queue/` cạnh scanner |
 
 Chế độ random lặp liên tục tới khi dừng. Khi dùng `SCANNER_AUTO=1`, muốn chỉ chạy country rồi kết thúc thì đặt `SCANNER_MODE=country` và `SCANNER_FOLLOW_RANDOM=0`.
 
@@ -249,7 +303,7 @@ Nút **Xóa proxy chết** chỉ xóa bản ghi chết chưa có dữ liệu g�
 | HTTP 400 khi ingest | JSON sai, lô rỗng, quá 500 proxy hoặc mã VPS/batch không hợp lệ. |
 | HTTP 500, thiếu bảng hoặc function | Đang dùng Supabase sai project hoặc chưa khôi phục đủ schema/RPC. Kiểm tra service-role key ở server. |
 | Không đăng nhập được | Email/mật khẩu, xác nhận email, cấu hình callback hoặc giới hạn gửi email của Supabase. |
-| Không tìm thấy ZMap/requests | Dùng Debian/Ubuntu và chạy startup bằng root để cài gói cho `/usr/bin/python3`. |
+| Không tìm thấy ZMap/requests | Chạy installer bằng root; kiểm tra kho gói của distro có ZMap/requests (RHEL có thể cần EPEL; Alpine có thể cần community), rồi chạy lại cùng lệnh. |
 | ZMap báo quyền raw socket | `start_worker.sh` yêu cầu root; không chỉ cài ZMap vào một môi trường không có quyền mạng tương ứng. |
 | Worker có lô `.ready` nhưng kho chưa tăng | Xem HTTP status/log gửi lại; giữ nguyên queue, không xóa để “reset”. |
 | Không tải được dải IP | Kiểm tra kết nối tới IPdeny; scanner sẽ chờ và thử lại. |
@@ -270,7 +324,10 @@ app/api/ingest/route.ts      API VPS gửi lô proxy
 lib/supabase/               Client Supabase server/browser và session proxy
 lib/probe.ts                Phép kiểm tra TCP/TLS cho proxy
 scanner/geo_proxy_scanner.py Scanner và queue gửi lại
-scanner/start_worker.sh      Khởi động worker Debian/Ubuntu
+scanner/install_worker.sh    Cài một lần, tự chạy bằng systemd/OpenRC
+scanner/worker_config.py     Kiểm tra/lưu/nạp cấu hình bí mật, giữ mã VPS
+scanner/test_worker_config.py Kiểm thử độc lập, không gửi dữ liệu vào kho
+scanner/start_worker.sh      Khởi động thủ công Debian/Ubuntu
 scanner/setup_fleet.py       Tạo cấu hình và gói fleet riêng tư
 scanner/zmap_blocklist.conf  Dải mạng bị loại trừ khi quét
 ```

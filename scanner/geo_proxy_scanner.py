@@ -18,6 +18,12 @@ import subprocess
 import tempfile
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+from worker_config import ConfigError, load_worker_environment
+
+try:
+    SAVED_WORKER_CONFIG = load_worker_environment()
+except ConfigError as error:
+    raise SystemExit(str(error)) from None
 
 # --- MỘT POOL CHUNG, WORKER TỰ NHẬN DIỆN ---
 LEDGER_URL = os.getenv("LEDGER_URL", "").strip().rstrip("/")
@@ -107,10 +113,10 @@ def check_ledger_setup():
         raise SystemExit("Thiếu LEDGER_URL (URL app đã deploy) hoặc LEDGER_INGEST_URL.")
     if not ingest_url_is_valid(INGEST_URL):
         raise SystemExit("LEDGER_URL phải là https://... và trỏ tới app có /api/ingest.")
-    if not load_fleet_config():
+    if not SAVED_WORKER_CONFIG and not load_fleet_config():
         load_existing_ledger_config()  # supports earlier per-VPS credentials
     if not VPS_TOKEN or VPS_TOKEN == "vps_sec_default_token":
-        raise SystemExit("Thiếu fleet_config.json. Chạy setup_fleet.py một lần trên máy quản lý rồi đưa file này vào template VPS riêng tư.")
+        raise SystemExit("Thiếu token. Tải cấu hình từ trang VPS rồi chạy install_worker.sh --config FILE, hoặc dùng fleet_config.json riêng tư.")
     if not re.fullmatch(r"[A-Za-z0-9._-]{3,64}", VPS_ID or ""):
         raise SystemExit("Sai VPS_ID.")
     print(f"[*] Worker tự nhận diện: {VPS_ID}")

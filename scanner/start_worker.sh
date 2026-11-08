@@ -19,10 +19,12 @@ if [ "$(id -u)" -ne 0 ]; then
   echo "ZMap cần quyền raw socket. Chạy startup bằng root hoặc cấp CAP_NET_RAW theo cấu hình hệ thống." >&2
   exit 1
 fi
-# Interactive terminal: show the scanner's mode menu. Noninteractive VPS
-# startup: keep zero-prompt fleet behavior. An explicit SCANNER_AUTO wins.
+# An installed worker must not prompt again, even from an interactive terminal.
+# Without saved config, preserve the legacy menu and explicit SCANNER_AUTO.
 if [ -z "${SCANNER_AUTO+x}" ]; then
-  if [ -t 0 ]; then
+  if [ -f "${KIEN_PROXY_CONFIG:-/etc/kien-proxy/worker.json}" ]; then
+    export SCANNER_AUTO=1
+  elif [ -t 0 ]; then
     export SCANNER_AUTO=0
   else
     export SCANNER_AUTO=1

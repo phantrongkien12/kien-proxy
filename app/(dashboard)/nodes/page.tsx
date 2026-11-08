@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { mutate } from 'swr'
 import { Badge, EmptyState, Field, PageHead, Panel, PanelHead, Spinner } from '@/components/ledger'
 import { useToast } from '@/components/toast'
+import { WorkerSetup } from '@/components/worker-setup'
 import { formatDateTime, formatNumber, relativeTime } from '@/lib/format'
 import { post, useNodes } from '@/lib/hooks'
 
@@ -15,7 +16,6 @@ export default function NodesPage() {
   const [nodeId, setNodeId] = useState('')
   const [creating, setCreating] = useState(false)
   const [removing, setRemoving] = useState<string | null>(null)
-  const [testing, setTesting] = useState<string | null>(null)
   const [issued, setIssued] = useState<Issued | null>(null)
   const [origin, setOrigin] = useState('')
 
@@ -24,7 +24,6 @@ export default function NodesPage() {
   }, [])
 
   const nodes = data?.nodes ?? []
-  const ownerId = data?.ownerId ?? ''
 
   async function createNode(event: React.FormEvent) {
     event.preventDefault()
@@ -58,125 +57,15 @@ export default function NodesPage() {
     }
   }
 
-  async function sendTestBatch(id: string) {
-    setTesting(id)
-    try {
-      const response = await fetch('/api/ingest', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          vps_id: id,
-          batch_id: `selftest-${Date.now()}`,
-          proxies: [{ host: '192.0.2.1', port: 8080, protocol: 'HTTP', username: '', password: '' }],
-        }),
-      })
-      const body = (await response.json().catch(() => ({}))) as { accepted?: number; error?: string }
-      if (!response.ok) throw new Error(body.error ?? 'Lô thử thất bại')
-      push(`Lô thử được nhận: ${formatNumber(body.accepted ?? 0)} proxy ghi vào sổ`)
-      await revalidate()
-      await mutate('/api/dashboard?view=overview')
-      await mutate('/api/dashboard?view=proxies')
-    } catch (caught) {
-      push(caught instanceof Error ? caught.message : 'Lô thử thất bại', 'error')
-    } finally {
-      setTesting(null)
-    }
-  }
-
-  async function copyText(value: string, label: string) {
-    try {
-      await navigator.clipboard.writeText(value)
-      push(`Đã copy ${label}`)
-    } catch {
-      push('Trình duyệt chặn clipboard. Hãy bôi đen và copy thủ công.', 'error')
-    }
-  }
-
-  const curlSnippet = `curl -X POST ${origin || 'https://<ten-mien>'}/api/ingest \\
-  -H "Authorization: Bearer ${issued?.token ?? '<TOKEN>'}" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "vps_id": "${issued?.id ?? 'VPS-01'}",
-    "batch_id": "'"$(date +%s)"'",
-    "proxies": [
-      { "host": "203.0.113.10", "port": 8080, "protocol": "HTTP", "username": "", "password": "" }
-    ]
-  }'`
-
-  const autoSnippet = [
-    'VPS_ID=$(hostname)',
-    `curl -X POST ${origin || 'https://<ten-mien>'}/api/ingest \\`,
-    `  -H "Authorization: Bearer ${ownerId || '<USER_ID>'}" \\`,
-    '  -H "Content-Type: application/json" \\',
-    '  -d "{\\"vps_id\\":\\"$VPS_ID\\",\\"batch_id\\":\\"$(date +%s)\\",\\"proxies\\":[{\\"host\\":\\"203.0.113.10\\",\\"port\\":8080,\\"protocol\\":\\"HTTP\\",\\"username\\":\\"\\",\\"password\\":\\"\\"}]}"',
-  ].join('\n')
-
   return (
     <div className="flex flex-col gap-6">
       <PageHead
         eyebrow="Đội thu thập"
         title="VPS và token thu thập"
-        description="VPS có thể tự đăng ký bằng user id của tài khoản, hoặc dùng token riêng cho từng máy. Token được băm trước khi lưu nên chỉ hiện đúng một lần lúc tạo."
+        description="Tạo token, tải cấu hình riêng và cài dịch vụ Linux một lần. VPS giữ cấu hình sau reboot; token được băm trong database và không thể đọc lại."
       />
 
-      <Panel className="border-foreground">
-        <PanelHead
-          title="Tự đăng ký bằng user id"
-          hint="không cần tạo token cho từng máy"
-          action={
-            <button
-              type="button"
-              className="btn btn-solid"
-              onClick={() => void copyText(ownerId, 'user id')}
-              disabled={!ownerId}
-            >
-              Copy user id
-            </button>
-          }
-        />
-        <div className="flex flex-col gap-3 px-4 py-4">
-          <p className="text-[12px] leading-relaxed text-muted-foreground text-pretty">
-            Dán user id vào script trên mỗi VPS. Máy tự gửi <span className="num text-foreground">hostname</span> lên
-            làm mã VPS, và lô đầu tiên sẽ tự tạo nút trong sổ cái — không phải đăng ký tay.
-          </p>
-          <p className="num break-all border border-border bg-secondary px-3 py-2.5 text-[12px]">
-            {ownerId || 'Đang tải user id…'}
-          </p>
-          <pre className="scroll-x border border-border bg-secondary px-3 py-2.5 font-mono text-[11px] leading-relaxed">
-            {autoSnippet}
-          </pre>
-          <p className="text-[12px] leading-relaxed text-muted-foreground text-pretty">
-            Lưu ý: user id là định danh công khai, không phải khoá bí mật — ai biết user id đều ghi được proxy vào sổ
-            cái của bạn, và user id thì không đổi được. Muốn an toàn hơn, dùng token riêng cho từng VPS ở khung bên dưới.
-          </p>
-        </div>
-      </Panel>
-
-      {issued ? (
-        <Panel className="border-foreground">
-          <PanelHead
-            title={`Token của ${issued.id}`}
-            hint="chỉ hiện một lần"
-            action={
-              <button type="button" className="btn btn-solid" onClick={() => void copyText(issued.token, 'token')}>
-                Copy token
-              </button>
-            }
-          />
-          <div className="px-4 py-4">
-            <p className="num break-all border border-border bg-secondary px-3 py-2.5 text-[12px]">{issued.token}</p>
-            <p className="mt-3 text-[12px] leading-relaxed text-muted-foreground text-pretty">
-              Dán token vào biến môi trường trên VPS. Nếu để lộ, hãy xoá VPS này và tạo lại để thu hồi token cũ.
-            </p>
-            <pre className="scroll-x mt-3 border border-border bg-secondary px-3 py-2.5 font-mono text-[11px] leading-relaxed">
-              {curlSnippet}
-            </pre>
-            <button type="button" className="btn btn-ghost mt-3" onClick={() => setIssued(null)}>
-              Đã lưu, ẩn đi
-            </button>
-          </div>
-        </Panel>
-      ) : null}
+      {issued ? <WorkerSetup issued={issued} origin={origin} onHide={() => setIssued(null)} /> : null}
 
       <div className="grid gap-3 lg:grid-cols-[1fr_1.4fr]">
         <Panel>
@@ -261,15 +150,6 @@ export default function NodesPage() {
                       <td className="num text-[11px] text-muted-foreground">{formatDateTime(node.created_at)}</td>
                       <td>
                         <div className="flex justify-end gap-1.5">
-                          <button
-                            type="button"
-                            className="btn btn-ghost"
-                            onClick={() => void sendTestBatch(node.id)}
-                            disabled={testing === node.id}
-                          >
-                            {testing === node.id ? <Spinner /> : null}
-                            Gửi lô thử
-                          </button>
                           <button
                             type="button"
                             className="btn btn-danger"

@@ -35,7 +35,7 @@ else:
 
 bundle = ROOT / "fleet_worker_bundle.zip"
 with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as archive:
-    for name in ("geo_proxy_scanner.py", "fleet_config.json", "start_worker.sh", "zmap_blocklist.conf"):
+    for name in ("geo_proxy_scanner.py", "worker_config.py", "fleet_config.json", "install_worker.sh", "start_worker.sh", "zmap_blocklist.conf"):
         archive.write(ROOT / name, name)
 if os.name != "nt":
     bundle.chmod(0o600)
