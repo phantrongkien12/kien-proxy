@@ -6,7 +6,7 @@ import { mutate } from 'swr'
 import { Badge, PageHead, Panel, PanelHead, Spinner } from '@/components/ledger'
 import { useToast } from '@/components/toast'
 import { formatNumber } from '@/lib/format'
-import { post, useConfig, useDeadCount, useSnapshot } from '@/lib/hooks'
+import { post, useConfig, useDeadCount } from '@/lib/hooks'
 import { createClient } from '@/lib/supabase/client'
 
 export default function SettingsPage() {
@@ -14,7 +14,6 @@ export default function SettingsPage() {
   const { push } = useToast()
   const { data: config } = useConfig()
   const { data: health } = useDeadCount()
-  const { data: snapshot } = useSnapshot()
 
   const [email, setEmail] = useState('')
   const [origin, setOrigin] = useState('')
@@ -49,8 +48,6 @@ export default function SettingsPage() {
     router.replace('/login')
     router.refresh()
   }
-
-  const demoNode = snapshot?.nodes.find((node) => node.id === 'DEMO-01')
 
   return (
     <div className="flex flex-col gap-6">
@@ -126,7 +123,7 @@ export default function SettingsPage() {
       </Panel>
 
       <Panel>
-        <PanelHead title="Dữ liệu" hint="dọn dẹp và dữ liệu mẫu" />
+        <PanelHead title="Dữ liệu" hint="dọn dẹp" />
         <div className="flex flex-col gap-4 px-4 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -150,40 +147,6 @@ export default function SettingsPage() {
             </button>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-            <div>
-              <p className="text-[12px] font-medium">Dữ liệu mẫu</p>
-              <p className="mt-0.5 max-w-xl text-[11px] leading-relaxed text-muted-foreground text-pretty">
-                Nạp khoảng 560 proxy giả để xem giao diện hoạt động. Toàn bộ dùng dải IP tài liệu RFC 5737
-                (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24) nên không trỏ tới máy thật nào.
-                {demoNode ? ` Hiện có ${formatNumber(demoNode.total)} dòng mẫu.` : ''}
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className="btn"
-                disabled={busy === 'seed'}
-                onClick={() =>
-                  void run('seed', { action: 'seed' }, (result) =>
-                    `Đã nạp ${formatNumber(Number(result.seeded ?? 0))} proxy mẫu`,
-                  )
-                }
-              >
-                {busy === 'seed' ? <Spinner /> : null}
-                Nạp dữ liệu mẫu
-              </button>
-              <button
-                type="button"
-                className="btn btn-danger"
-                disabled={busy === 'unseed' || !demoNode}
-                onClick={() => void run('unseed', { action: 'unseed' }, () => 'Đã xoá toàn bộ dữ liệu mẫu')}
-              >
-                {busy === 'unseed' ? <Spinner /> : null}
-                Xoá dữ liệu mẫu
-              </button>
-            </div>
-          </div>
         </div>
       </Panel>
 

@@ -55,16 +55,11 @@ export default function OverviewPage() {
         <Panel>
           <EmptyState
             title="Sổ cái đang trống"
-            body="Chưa có proxy nào được ghi nhận. Đăng ký một VPS để lấy token thu thập, hoặc nạp dữ liệu mẫu để xem giao diện hoạt động."
+            body="Chưa có proxy nào được ghi nhận. Đăng ký một VPS để lấy token thu thập, rồi cấu hình agent gửi lô proxy đầu tiên về sổ cái."
             action={
-              <div className="flex flex-wrap justify-center gap-2">
-                <Link href="/nodes" className="btn btn-solid">
-                  Đăng ký VPS
-                </Link>
-                <Link href="/settings" className="btn">
-                  Nạp dữ liệu mẫu
-                </Link>
-              </div>
+              <Link href="/nodes" className="btn btn-solid">
+                Đăng ký VPS
+              </Link>
             }
           />
         </Panel>
