@@ -3,6 +3,9 @@ set -eu
 umask 077
 
 CONFIG_SOURCE=
+URL=
+NODE=
+TOKEN=
 CONFIG=/etc/kien-proxy/worker.json
 APP=/opt/kien-proxy
 STATE=/var/lib/kien-proxy
@@ -10,7 +13,8 @@ BASE=https://raw.githubusercontent.com/phantrongkien12/kien-proxy/master/scanner
 
 usage() {
   printf '%s\n' 'Kien Proxy: cài một lần và giữ cấu hình sau reboot.' \
-    'Lần đầu: sudo sh install_worker.sh --config /duong-dan/kien-proxy-worker.json' \
+    'Máy mới, một lệnh: sudo sh install_worker.sh --url URL --node MA_VPS --token TOKEN' \
+    'Hoặc dùng file tải từ dashboard: sudo sh install_worker.sh --config FILE' \
     'Lần sau: sudo sh install_worker.sh (giữ nguyên token và mã VPS)' \
     'Hỗ trợ systemd/OpenRC; cần root, Python 3, requests, ZMap và quyền raw socket.'
 }
@@ -23,17 +27,40 @@ while [ "$#" -gt 0 ]; do
       CONFIG_SOURCE=$2
       shift 2
       ;;
+    --url)
+      [ "$#" -ge 2 ] || fail 'Thiếu giá trị sau --url.'
+      URL=$2
+      shift 2
+      ;;
+    --node)
+      [ "$#" -ge 2 ] || fail 'Thiếu giá trị sau --node.'
+      NODE=$2
+      shift 2
+      ;;
+    --token)
+      [ "$#" -ge 2 ] || fail 'Thiếu giá trị sau --token.'
+      TOKEN=$2
+      shift 2
+      ;;
     -h|--help) usage; exit 0 ;;
     *) fail 'Tham số không hợp lệ. Dùng --help để xem hướng dẫn.' ;;
   esac
 done
 
+if [ -n "$URL" ] || [ -n "$NODE" ] || [ -n "$TOKEN" ]; then
+  [ -n "$URL" ] && [ -n "$NODE" ] && [ -n "$TOKEN" ] || fail 'Cần đủ --url, --node và --token.'
+  [ -z "$CONFIG_SOURCE" ] || fail 'Chỉ dùng một trong --config hoặc --url/--node/--token.'
+  CREDENTIALS=1
+else
+  CREDENTIALS=
+fi
+
 [ "$(id -u)" -eq 0 ] || fail 'Chạy installer bằng sudo hoặc root.'
 [ "$(uname -s)" = Linux ] || fail 'Installer này chỉ dành cho Linux.'
 if [ -n "$CONFIG_SOURCE" ]; then
   [ -f "$CONFIG_SOURCE" ] || fail 'Không tìm thấy file cấu hình tải từ dashboard.'
-elif [ ! -f "$CONFIG" ]; then
-  fail 'Lần đầu cần --config FILE. Đăng nhập dashboard > VPS > Tạo token > Tải cấu hình VPS.'
+elif [ -z "$CREDENTIALS" ] && [ ! -f "$CONFIG" ]; then
+  fail 'Lần đầu cần --url/--node/--token hoặc --config FILE. Đăng nhập dashboard > VPS > Tạo token.'
 fi
 
 if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
@@ -98,6 +125,8 @@ if [ -n "$CONFIG_SOURCE" ]; then
     cp "$CONFIG" "$STAGE/worker.json"
   fi
   "$PYTHON" "$STAGE/worker_config.py" --install-config "$CONFIG_SOURCE" --target "$STAGE/worker.json"
+elif [ -n "$CREDENTIALS" ]; then
+  "$PYTHON" "$STAGE/worker_config.py" --set-credentials --url "$URL" --node "$NODE" --token "$TOKEN" --target "$STAGE/worker.json"
 else
   "$PYTHON" "$STAGE/worker_config.py" --check "$CONFIG"
   printf '%s\n' 'Dùng lại cấu hình đã lưu; không hỏi token và không tạo mã VPS mới.'
@@ -105,7 +134,7 @@ fi
 
 install -d -m 700 /etc/kien-proxy "$STATE" "$STATE/queue"
 install -d -m 755 "$APP"
-if [ -n "$CONFIG_SOURCE" ]; then
+if [ -n "$CONFIG_SOURCE" ] || [ -n "$CREDENTIALS" ]; then
   install -m 600 "$STAGE/worker.json" /etc/kien-proxy/.worker.json.new
   mv /etc/kien-proxy/.worker.json.new "$CONFIG"
 fi

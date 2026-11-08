@@ -4,10 +4,7 @@ import { useState } from 'react'
 import { Field, Panel, PanelHead } from '@/components/ledger'
 import { useToast } from '@/components/toast'
 
-const installCommand = `chmod 600 ./kien-proxy-worker.json &&
-INSTALLER="$(mktemp /tmp/kien-proxy-install.XXXXXX)" &&
-curl -fsSL https://raw.githubusercontent.com/phantrongkien12/kien-proxy/master/scanner/install_worker.sh -o "$INSTALLER" &&
-sudo sh "$INSTALLER" --config ./kien-proxy-worker.json`
+const installerUrl = 'https://raw.githubusercontent.com/phantrongkien12/kien-proxy/master/scanner/install_worker.sh'
 
 type WorkerSetupProps = {
   issued: { id: string; token: string }
@@ -20,21 +17,32 @@ export function WorkerSetup({ issued, origin, onHide }: WorkerSetupProps) {
   const [editedUrl, setEditedUrl] = useState<string | null>(null)
   const ledgerUrl = editedUrl ?? origin
 
-  function downloadConfig() {
-    let url: URL
+  function readOrigin(): string | null {
     try {
-      url = new URL(ledgerUrl.trim())
+      const url = new URL(ledgerUrl.trim())
       if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || !['', '/'].includes(url.pathname)) {
         throw new Error('invalid-url')
       }
+      return url.origin
     } catch {
       push('Nhập URL HTTPS của dashboard đã deploy, không có đường dẫn hoặc thông tin đăng nhập.', 'error')
-      return
+      return null
     }
+  }
 
+  const oneLiner = `INSTALLER="$(mktemp /tmp/kien-proxy-install.XXXXXX)" && curl -fsSL ${installerUrl} -o "$INSTALLER" && sudo sh "$INSTALLER" --url ${ledgerUrl} --node ${issued.id} --token ${issued.token}`
+
+  const fileCommand = `chmod 600 ./kien-proxy-worker.json &&
+INSTALLER="$(mktemp /tmp/kien-proxy-install.XXXXXX)" &&
+curl -fsSL ${installerUrl} -o "$INSTALLER" &&
+sudo sh "$INSTALLER" --config ./kien-proxy-worker.json`
+
+  function downloadConfig() {
+    const origin = readOrigin()
+    if (!origin) return
     const config = {
       version: 1,
-      url: url.origin,
+      url: origin,
       node: issued.id,
       token: issued.token,
       options: { SCANNER_AUTO: '1', SCANNER_MODE: 'random' },
@@ -55,37 +63,48 @@ export function WorkerSetup({ issued, origin, onHide }: WorkerSetupProps) {
       await navigator.clipboard.writeText(value)
       push(`Đã copy ${label}`)
     } catch {
-      push('Clipboard bị chặn. Tải file cấu hình để lưu token, hoặc bôi đen lệnh cài để copy.', 'error')
+      push('Clipboard bị chặn. Bôi đen đoạn lệnh rồi copy thủ công.', 'error')
     }
   }
 
   return (
     <Panel className="border-foreground">
-      <PanelHead title={`Cài một lần cho ${issued.id}`} hint="cấu hình riêng" />
+      <PanelHead title={`Cài một lần cho ${issued.id}`} hint="một lệnh, không cần file" />
       <div className="flex flex-col gap-4 px-4 py-4 text-sm leading-relaxed">
         <p className="text-pretty text-muted-foreground">
-          Cấu hình dùng token vừa cấp từ tài khoản đang đăng nhập. Token chỉ có ở lần tạo này; tải file trước khi ẩn thẻ.
+          Cấu hình dùng token vừa cấp từ tài khoản đang đăng nhập. Token chỉ có ở lần tạo này; copy lệnh trước khi ẩn thẻ.
           VPS lưu lại cấu hình và tự chạy sau reboot, không phải nhập lại.
         </p>
         <Field label="URL dashboard đã deploy" hint="Dùng tên miền production ổn định, không dùng URL preview v0 tạm thời.">
           <input type="url" className="field" value={ledgerUrl} onChange={(event) => setEditedUrl(event.target.value)} placeholder="https://your-app.vercel.app" />
         </Field>
-        <div className="flex flex-wrap items-center gap-2">
-          <button type="button" className="btn btn-solid" onClick={downloadConfig} disabled={!ledgerUrl}>Tải cấu hình VPS</button>
-          <button type="button" className="btn btn-ghost" onClick={() => void copy(issued.token, 'token riêng')}>Copy token</button>
-        </div>
-        <ol className="flex list-decimal flex-col gap-2 pl-5 text-muted-foreground">
-          <li>Chuyển file <code className="font-mono text-foreground">kien-proxy-worker.json</code> lên VPS bằng SCP/SFTP.</li>
-          <li>Chạy khối lệnh dưới tại thư mục chứa file. Installer cần root; nếu đã đăng nhập root thì bỏ <code className="font-mono text-foreground">sudo</code>.</li>
-          <li>Lần sau chỉ quản lý dịch vụ <code className="font-mono text-foreground">kien-proxy</code>; cấu hình và hàng đợi vẫn được giữ.</li>
-        </ol>
-        <pre className="scroll-x border border-border bg-secondary px-3 py-3 font-mono text-sm leading-relaxed text-secondary-foreground">{installCommand}</pre>
-        <div className="flex flex-wrap items-center gap-2">
-          <button type="button" className="btn btn-ghost" onClick={() => void copy(installCommand, 'lệnh cài Linux')}>Copy lệnh cài</button>
-          <button type="button" className="btn btn-ghost" onClick={onHide}>Đã lưu, ẩn đi</button>
+        <div className="flex flex-col gap-2">
+          <p className="text-muted-foreground">SSH vào VPS mới rồi dán đúng một lệnh này:</p>
+          <pre className="scroll-x border border-border bg-secondary px-3 py-3 font-mono text-sm leading-relaxed text-secondary-foreground">{oneLiner}</pre>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" className="btn btn-solid" onClick={() => void copy(oneLiner, 'lệnh cài một lần')} disabled={!ledgerUrl}>Copy lệnh cài một lần</button>
+            <button type="button" className="btn btn-ghost" onClick={onHide}>Đã lưu, ẩn đi</button>
+          </div>
         </div>
         <p className="text-pretty text-muted-foreground">
-          File chứa khóa ghi dữ liệu: không đưa lên GitHub hoặc gửi vào chat. Token cũ không thể đọc lại từ database vì chỉ lưu hash.
+          Lệnh có token nên sẽ nằm trong lịch sử shell của VPS; chạy <code className="font-mono text-foreground">history -c</code> sau khi cài nếu máy có nhiều người dùng.
+          Không cần <code className="font-mono text-foreground">git clone</code> và không cần chuyển file lên máy.
+        </p>
+        <details className="border border-border px-3 py-3">
+          <summary className="cursor-pointer text-foreground">Cách khác: dùng file cấu hình (không để token trong lịch sử shell)</summary>
+          <div className="flex flex-col gap-3 pt-3">
+            <p className="text-pretty text-muted-foreground">
+              Tải file, chuyển lên VPS bằng SCP/SFTP, rồi chạy khối lệnh dưới tại thư mục chứa file.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" className="btn btn-ghost" onClick={downloadConfig} disabled={!ledgerUrl}>Tải file cấu hình</button>
+              <button type="button" className="btn btn-ghost" onClick={() => void copy(fileCommand, 'lệnh cài bằng file')}>Copy lệnh cài bằng file</button>
+            </div>
+            <pre className="scroll-x border border-border bg-secondary px-3 py-3 font-mono text-sm leading-relaxed text-secondary-foreground">{fileCommand}</pre>
+          </div>
+        </details>
+        <p className="text-pretty text-muted-foreground">
+          File và lệnh đều chứa khóa ghi dữ liệu: không đưa lên GitHub hoặc gửi vào chat. Token cũ không thể đọc lại từ database vì chỉ lưu hash.
           Mỗi VPS dùng một mã/token riêng; không sao chép cùng cấu hình này sang nhiều máy.
         </p>
       </div>

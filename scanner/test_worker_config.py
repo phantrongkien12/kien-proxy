@@ -12,7 +12,9 @@ import shutil
 from pathlib import Path
 from unittest.mock import patch
 
-from worker_config import ConfigError, install_config, load_worker_environment, normalize_config, read_config
+from worker_config import (
+    ConfigError, install_config, install_credentials, load_worker_environment, normalize_config, read_config,
+)
 
 
 class WorkerConfigTests(unittest.TestCase):
@@ -161,6 +163,32 @@ assert scanner.INGEST_URL == config['url'] + '/api/ingest'
                 result = subprocess.run([sys.executable, '-c', code], env=env, capture_output=True, text=True, timeout=10)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertNotIn(self.secret, result.stdout + result.stderr)
+
+    def test_credentials_flags_install_without_any_file(self):
+        config = install_credentials(self.config['url'], self.config['node'], self.secret, self.target)
+        self.assertEqual(config['node'], self.config['node'])
+        self.assertEqual(stat.S_IMODE(self.target.stat().st_mode), 0o600)
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertTrue(load_worker_environment(self.target))
+            self.assertEqual(os.environ['VPS_ID'], self.config['node'])
+            self.assertEqual(os.environ['VPS_TOKEN'], self.secret)
+
+    def test_credentials_flags_reject_incomplete_or_unsafe_input(self):
+        for url, node, token in (
+            (self.config['url'], self.config['node'], ''),
+            ('http://remote.example.org', self.config['node'], self.secret),
+            (self.config['url'], 'bad node!', self.secret),
+            (self.config['url'], self.config['node'], '00000000-0000-4000-8000-000000000000'),
+        ):
+            with self.subTest(node=node), self.assertRaises(ConfigError):
+                install_credentials(url, node, token, self.target)
+        self.assertFalse(self.target.exists())
+
+    def test_installer_accepts_credential_flags_and_keeps_config_on_reinstall(self):
+        script = (Path(__file__).resolve().parent / 'install_worker.sh').read_text(encoding='utf-8')
+        for flag in ('--url', '--node', '--token', '--set-credentials'):
+            self.assertIn(flag, script)
+        self.assertIn('Chỉ dùng một trong --config hoặc --url/--node/--token.', script)
 
     def test_installer_does_not_trust_files_beside_downloaded_script(self):
         script = (Path(__file__).resolve().parent / 'install_worker.sh').read_text(encoding='utf-8')

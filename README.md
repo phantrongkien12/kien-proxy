@@ -126,7 +126,7 @@ pnpm exec tsc --noEmit
 
 Nếu tiếp tục làm việc trong v0, có thể dùng **Publish**. Worker phải trỏ đến URL HTTPS của bản đã deploy, không dùng URL preview tạm thời.
 
-ZMap và scanner chạy trên VPS, **không chạy bên trong Vercel**. Vercel chỉ nhận dữ liệu, hiển thị dashboard và thực hiện các phép kiểm tra proxy theo yêu cầu.
+ZMap và scanner chạy tr��n VPS, **không chạy bên trong Vercel**. Vercel chỉ nhận dữ liệu, hiển thị dashboard và thực hiện các phép kiểm tra proxy theo yêu cầu.
 
 ## 5. Một VPS Linux: cài một lần, không nhập lại cấu hình
 
@@ -134,14 +134,29 @@ ZMap và scanner chạy trên VPS, **không chạy bên trong Vercel**. Vercel c
 
 1. Mở **dashboard đã deploy**, đăng nhập tài khoản của bạn rồi vào **VPS**. Nếu chưa thấy nút tải cấu hình, deploy phiên bản mới của repo/Publish trước.
 2. Đặt mã riêng cho máy, ví dụ `VPS-HN-01`, rồi chọn **Tạo token**.
-3. Kiểm tra **URL dashboard đã deploy**, chọn **Tải cấu hình VPS** để nhận `kien-proxy-worker.json`. URL và mã/token vừa cấp được điền vào file tự động; không cần lấy Supabase key.
+3. Kiểm tra **URL dashboard đã deploy**, rồi chọn **Copy lệnh cài một lần** (hoặc **Tải file cấu hình** nếu muốn tránh token trong lịch sử shell). URL và mã/token vừa cấp được điền sẵn; không cần lấy Supabase key.
 4. Giữ file bí mật. Token chỉ xuất hiện trong lần tạo này; database lưu hash nên **không thể đọc lại token cũ**. Nếu token cũ đã lưu trên VPS, cứ dùng lại, không tạo lại.
 
-### Cài lần đầu trên VPS
+### Cài lần đầu trên VPS — một lệnh, không cần file
 
 VPS cần Linux, root/sudo, quyền raw socket và **systemd hoặc OpenRC**. Installer hỗ trợ package manager `apt-get`, `dnf`, `yum`, `apk`, `pacman`, `zypper`. Kho gói phải có ZMap/requests; một số bản RHEL/Alma/Rocky hoặc Alpine cần bật kho EPEL/community tương ứng. Container không có init/raw socket không được coi là VPS tương thích.
 
-Chuyển file vừa tải bằng SFTP hoặc chạy lệnh sau **trên máy đang giữ file**, thay USER/IP bằng thông tin SSH của bạn:
+Máy mới tinh chỉ cần SSH vào và dán **một lệnh** (thay URL, mã VPS và token bằng thông tin ở bước trên):
+
+```bash
+INSTALLER="$(mktemp /tmp/kien-proxy-install.XXXXXX)" &&
+curl -fsSL https://raw.githubusercontent.com/phantrongkien12/kien-proxy/master/scanner/install_worker.sh -o "$INSTALLER" &&
+sudo sh "$INSTALLER" --url https://your-app.vercel.app --node VPS-HN-01 --token TOKEN_RIENG_VUA_TAO
+```
+
+Không cần `git clone`, không cần SCP file cấu hình. Nút **Copy lệnh cài một lần** trên dashboard đã điền sẵn URL, mã VPS và token cho bạn.
+
+Lệnh có token nên sẽ nằm trong lịch sử shell của VPS; chạy `history -c` sau khi cài nếu máy có nhiều người dùng. Muốn tránh hoàn toàn, dùng cách tải file bên dưới.
+
+<details>
+<summary>Cách 2: dùng file cấu hình tải từ dashboard</summary>
+
+Chuyển file bằng SFTP hoặc chạy lệnh sau **trên máy đang giữ file**, thay USER/IP bằng thông tin SSH của bạn:
 
 ```bash
 scp ./kien-proxy-worker.json USER@VPS_IP:~/kien-proxy-worker.json
@@ -156,9 +171,11 @@ curl -fsSL https://raw.githubusercontent.com/phantrongkien12/kien-proxy/master/s
 sudo sh "$INSTALLER" --config ./kien-proxy-worker.json
 ```
 
-Nếu máy có `wget` thay vì `curl`, thay dòng tải bằng `wget -O "$INSTALLER" https://raw.githubusercontent.com/phantrongkien12/kien-proxy/master/scanner/install_worker.sh &&` rồi chạy dòng installer. Nếu đã clone repo, có thể chạy `sudo sh scanner/install_worker.sh --config /duong-dan/kien-proxy-worker.json` trực tiếp, không cần tải script riêng. Đã đăng nhập root thì bỏ `sudo` (hoặc dùng `doas` nếu hệ thống của bạn cấp quyền bằng doas). Bộ cài luôn tải các module từ repo HTTPS, không tự lấy file Python nằm cạnh script trong thư mục tạm.
+</details>
 
-Installer cài dependency còn thiếu, lấy mã worker, lưu config quyền `600` và bật dịch vụ **`kien-proxy`**. Mặc định scanner chạy random liên tục, không hỏi menu; không cần giữ cửa sổ SSH mở. Chỉ quét các mục tiêu được phép và tuân thủ chính sách nhà cung cấp VPS.
+Nếu máy có `wget` thay vì `curl`, thay dòng tải bằng `wget -O "$INSTALLER" https://raw.githubusercontent.com/phantrongkien12/kien-proxy/master/scanner/install_worker.sh &&` rồi chạy dòng installer. Nếu đã clone repo, có thể chạy `sudo sh scanner/install_worker.sh --url ... --node ... --token ...` trực tiếp, không cần tải script riêng. Đã đăng nhập root thì bỏ `sudo` (hoặc dùng `doas` nếu hệ thống của bạn cấp quyền bằng doas). Bộ cài luôn tải các module từ repo HTTPS, không tự lấy file Python nằm cạnh script trong thư mục tạm.
+
+Installer cài dependency còn thiếu, lưu config quyền `600` và bật dịch vụ **`kien-proxy`**. Mặc định scanner chạy random liên tục, không hỏi menu; không cần giữ cửa sổ SSH mở. Chỉ quét các mục tiêu được phép và tuân thủ chính sách nhà cung cấp VPS.
 
 ### Những lần sau
 

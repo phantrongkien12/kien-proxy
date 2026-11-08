@@ -102,14 +102,8 @@ def read_config(path):
     return normalize_config(read_json(path))
 
 
-def install_config(source, target):
+def write_config(config, target):
     target = Path(target)
-    incoming = read_json(source)
-    config = normalize_config(incoming, generate_node=True)
-    if incoming.get('fleet_token') and not incoming.get('node') and target.exists():
-        existing = read_config(target)
-        if config['url'] == existing['url'] and config.get('fleet_token') == existing.get('fleet_token'):
-            config['node'] = existing['node']
     target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix='.worker-', suffix='.json', dir=str(target.parent))
     try:
@@ -124,6 +118,20 @@ def install_config(source, target):
         if os.path.exists(temporary):
             os.unlink(temporary)
     return config
+
+
+def install_config(source, target):
+    incoming = read_json(source)
+    config = normalize_config(incoming, generate_node=True)
+    if incoming.get('fleet_token') and not incoming.get('node') and Path(target).exists():
+        existing = read_config(target)
+        if config['url'] == existing['url'] and config.get('fleet_token') == existing.get('fleet_token'):
+            config['node'] = existing['node']
+    return write_config(config, target)
+
+
+def install_credentials(url, node, token, target):
+    return write_config(normalize_config({'version': 1, 'url': url, 'node': node, 'token': token}), target)
 
 
 def load_worker_environment(path=None):
@@ -154,10 +162,21 @@ def main():
     actions = parser.add_mutually_exclusive_group(required=True)
     actions.add_argument('--check', metavar='FILE')
     actions.add_argument('--install-config', metavar='FILE')
+    actions.add_argument('--set-credentials', action='store_true')
+    parser.add_argument('--url')
+    parser.add_argument('--node')
+    parser.add_argument('--token')
     parser.add_argument('--target', default=str(DEFAULT_CONFIG))
     args = parser.parse_args()
     try:
-        config = read_config(args.check) if args.check else install_config(args.install_config, args.target)
+        if args.set_credentials:
+            if not (args.url and args.node and args.token):
+                raise ConfigError('Cần đủ --url, --node và --token.')
+            config = install_credentials(args.url, args.node, args.token, args.target)
+        elif args.check:
+            config = read_config(args.check)
+        else:
+            config = install_config(args.install_config, args.target)
     except ConfigError as error:
         print(str(error), file=sys.stderr)
         return 1
