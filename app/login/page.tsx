@@ -29,7 +29,6 @@ function LoginForm() {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
-    console.log('[v0] submit fired', { mode, email, passwordLength: password.length })
     setBusy(true)
     setError(null)
     setNotice(null)

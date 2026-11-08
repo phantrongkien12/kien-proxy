@@ -80,6 +80,32 @@ function makeRandom(seed: number) {
 }
 
 /**
+ * `proxies` is unique on (host, port, protocol, username), so demo identities
+ * have to be drawn without replacement — independent random picks collide
+ * often enough to fail the whole batch insert.
+ */
+function pickUniqueIdentity(
+  random: () => number,
+  ranges: string[],
+  ports: number[],
+  protocols: string[],
+  seen: Set<string>,
+) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const range = ranges[Math.floor(random() * ranges.length)]
+    const host = `${range}.${1 + Math.floor(random() * 254)}`
+    const port = ports[Math.floor(random() * ports.length)]
+    const protocol = protocols[Math.floor(random() * protocols.length)]
+    const username = random() < 0.3 ? `u${1000 + Math.floor(random() * 8999)}` : ''
+    const key = `${host}:${port}:${protocol}:${username}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    return { host, port, protocol, username }
+  }
+  return null
+}
+
+/**
  * Demo rows use the RFC 5737 documentation ranges (192.0.2.0/24, 198.51.100.0/24,
  * 203.0.113.0/24) so a seeded ledger can never point at a real host.
  */
@@ -91,6 +117,7 @@ function buildDemoRows() {
   const perDay = [18, 24, 31, 27, 42, 38, 55, 61, 48, 72, 66, 84]
   const rows: Array<Record<string, unknown>> = []
   const batches: Array<Record<string, unknown>> = []
+  const seen = new Set<string>()
   const now = Date.now()
 
   perDay.forEach((count, dayIndex) => {
@@ -98,21 +125,16 @@ function buildDemoRows() {
     const dayStart = now - daysAgo * 86400000
 
     for (let i = 0; i < count; i += 1) {
-      const range = ranges[Math.floor(random() * ranges.length)]
-      const host = `${range}.${1 + Math.floor(random() * 254)}`
-      const port = ports[Math.floor(random() * ports.length)]
-      const protocol = protocols[Math.floor(random() * protocols.length)]
-      const withAuth = random() < 0.3
+      const identity = pickUniqueIdentity(random, ranges, ports, protocols, seen)
+      if (!identity) continue
+
       const roll = random()
       const status: CheckStatus = roll < 0.55 ? 'untested' : roll < 0.8 ? 'healthy' : roll < 0.92 ? 'suspect' : 'dead'
       const lastSeen = new Date(dayStart - Math.floor(random() * 20) * 3600000).toISOString()
 
       rows.push({
-        host,
-        port,
-        protocol,
-        username: withAuth ? `u${1000 + Math.floor(random() * 8999)}` : '',
-        password: withAuth ? `p${random().toString(36).slice(2, 10)}` : '',
+        ...identity,
+        password: identity.username ? `p${random().toString(36).slice(2, 10)}` : '',
         node_id: DEMO_NODE,
         first_seen: lastSeen,
         last_seen: lastSeen,
@@ -359,7 +381,10 @@ export async function POST(request: NextRequest) {
     if (nodeError) return fail(nodeError.message, 500)
 
     const { error: proxyError } = await admin.from('proxies').insert(rows)
-    if (proxyError) return fail(proxyError.message, 500)
+    if (proxyError) {
+      await admin.from('nodes').delete().eq('id', DEMO_NODE)
+      return fail(proxyError.message, 500)
+    }
 
     const { error: batchError } = await admin.from('ingest_batches').insert(batches)
     if (batchError) return fail(batchError.message, 500)
