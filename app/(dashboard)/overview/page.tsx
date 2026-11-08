@@ -37,6 +37,16 @@ export default function OverviewPage() {
             <span className="num text-[11px] text-muted-foreground">
               {data ? `cập nhật ${relativeTime(new Date().toISOString())}` : 'đang tải'}
             </span>
+            <button
+              type="button"
+              className="btn"
+              onClick={async () => {
+                await fetch('/api/seed', { method: 'POST' })
+                void mutate()
+              }}
+            >
+              Seed dữ liệu test
+            </button>
             <button type="button" className="btn" onClick={() => void mutate()} disabled={isLoading}>
               {isLoading ? <Spinner /> : null}
               Làm mới
@@ -55,11 +65,23 @@ export default function OverviewPage() {
         <Panel>
           <EmptyState
             title="Sổ cái đang trống"
-            body="Chưa có proxy nào được ghi nhận. Đăng ký một VPS để lấy token thu thập, rồi cấu hình agent gửi lô proxy đầu tiên về sổ cái."
+            body="Chưa có proxy nào được ghi nhận. Đăng ký một VPS để lấy token thu thập, hoặc nhấn nút bên dưới để nạp dữ liệu VPS và proxy test ngay lập tức."
             action={
-              <Link href="/nodes" className="btn btn-solid">
-                Đăng ký VPS
-              </Link>
+              <div className="flex items-center gap-3">
+                <Link href="/nodes" className="btn btn-solid">
+                  Đăng ký VPS
+                </Link>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={async () => {
+                    await fetch('/api/seed', { method: 'POST' })
+                    void mutate()
+                  }}
+                >
+                  Nạp dữ liệu test ngay
+                </button>
+              </div>
             }
           />
         </Panel>
