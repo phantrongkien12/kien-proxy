@@ -8,16 +8,19 @@ export const dynamic = 'force-dynamic'
 
 const NODE_ID_PATTERN = /^[A-Za-z0-9._-]{3,64}$/
 const WORKER_ID_PATTERN = /^wrk_[A-Za-z0-9._-]{1,60}$/
+const USER_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function fail(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status })
 }
 
 /**
- * VPS-facing ingest. Auth is a bearer token: either a per-node token issued from
- * the dashboard, or the shared FLEET_TOKEN for auto-scaling workers (which
- * self-register as wrk_* nodes). The token is hashed before it ever reaches the
- * database, so a leaked table dump cannot be replayed against this endpoint.
+ * VPS-facing ingest. Auth is a bearer token in one of three forms: a per-node
+ * token issued from the dashboard, the shared FLEET_TOKEN for auto-scaling
+ * workers (which self-register as wrk_* nodes), or the account's user id, which
+ * lets a machine register itself under the hostname it reports. Tokens are
+ * hashed before they ever reach the database, so a leaked table dump cannot be
+ * replayed against this endpoint.
  */
 export async function POST(request: NextRequest) {
   const header = request.headers.get('authorization') ?? ''
@@ -48,6 +51,18 @@ export async function POST(request: NextRequest) {
     if (!WORKER_ID_PATTERN.test(vpsId)) return fail('vps_id của worker phải có tiền tố wrk_', 403)
     const derived = createHash('sha256').update(`${fleetToken}:${vpsId}`).digest('hex')
     const { error } = await admin.from('nodes').upsert({ id: vpsId, token_hash: derived }, { onConflict: 'id' })
+    if (error) return fail(error.message, 500)
+    nodeId = vpsId
+  } else if (USER_ID_PATTERN.test(token)) {
+    // Account-level auto-registration: the bearer token is the owner's user id and
+    // the node names itself from the hostname it reports. ignoreDuplicates keeps a
+    // machine that was registered by hand on its own token instead of overwriting it.
+    const { data: owner, error: ownerError } = await admin.auth.admin.getUserById(token)
+    if (ownerError || !owner?.user) return fail('Token không hợp lệ', 401)
+    const derived = createHash('sha256').update(`${token}:${vpsId}`).digest('hex')
+    const { error } = await admin
+      .from('nodes')
+      .upsert({ id: vpsId, token_hash: derived }, { onConflict: 'id', ignoreDuplicates: true })
     if (error) return fail(error.message, 500)
     nodeId = vpsId
   } else {

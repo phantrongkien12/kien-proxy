@@ -1,7 +1,9 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-const PUBLIC_PATHS = ['/login', '/auth']
+// /api/ingest authenticates with its own bearer token, so it must stay reachable
+// without a session cookie — VPS machines have no browser session.
+const PUBLIC_PATHS = ['/login', '/auth', '/api/ingest']
 
 function isPublic(pathname: string) {
   return PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`))

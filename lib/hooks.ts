@@ -32,7 +32,11 @@ export function useSnapshot() {
 }
 
 export function useNodes() {
-  return useSWR<{ nodes: Array<NodeRow & { created_at: string }> }>('/api/dashboard?view=nodes', fetcher, live)
+  return useSWR<{ nodes: Array<NodeRow & { created_at: string }>; ownerId: string }>(
+    '/api/dashboard?view=nodes',
+    fetcher,
+    live,
+  )
 }
 
 export function useActivity() {

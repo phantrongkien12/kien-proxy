@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
       .select('id,total,last_seen,created_at')
       .order('id', { ascending: true })
     if (error) return fail(error.message, 500)
-    return NextResponse.json({ nodes: data ?? [] })
+    return NextResponse.json({ nodes: data ?? [], ownerId: user.id })
   }
 
   if (view === 'activity') {

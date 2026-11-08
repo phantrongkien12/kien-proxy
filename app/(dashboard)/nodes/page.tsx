@@ -24,6 +24,7 @@ export default function NodesPage() {
   }, [])
 
   const nodes = data?.nodes ?? []
+  const ownerId = data?.ownerId ?? ''
 
   async function createNode(event: React.FormEvent) {
     event.preventDefault()
@@ -82,10 +83,10 @@ export default function NodesPage() {
     }
   }
 
-  async function copyToken(token: string) {
+  async function copyText(value: string, label: string) {
     try {
-      await navigator.clipboard.writeText(token)
-      push('Đã copy token')
+      await navigator.clipboard.writeText(value)
+      push(`Đã copy ${label}`)
     } catch {
       push('Trình duyệt chặn clipboard. Hãy bôi đen và copy thủ công.', 'error')
     }
@@ -102,13 +103,54 @@ export default function NodesPage() {
     ]
   }'`
 
+  const autoSnippet = [
+    'VPS_ID=$(hostname)',
+    `curl -X POST ${origin || 'https://<ten-mien>'}/api/ingest \\`,
+    `  -H "Authorization: Bearer ${ownerId || '<USER_ID>'}" \\`,
+    '  -H "Content-Type: application/json" \\',
+    '  -d "{\\"vps_id\\":\\"$VPS_ID\\",\\"batch_id\\":\\"$(date +%s)\\",\\"proxies\\":[{\\"host\\":\\"203.0.113.10\\",\\"port\\":8080,\\"protocol\\":\\"HTTP\\",\\"username\\":\\"\\",\\"password\\":\\"\\"}]}"',
+  ].join('\n')
+
   return (
     <div className="flex flex-col gap-6">
       <PageHead
         eyebrow="Đội thu thập"
         title="VPS và token thu thập"
-        description="Mỗi VPS có một token riêng để gửi proxy lên sổ cái. Token được băm trước khi lưu, nên chỉ hiện đúng một lần lúc tạo."
+        description="VPS có thể tự đăng ký bằng user id của tài khoản, hoặc dùng token riêng cho từng máy. Token được băm trước khi lưu nên chỉ hiện đúng một lần lúc tạo."
       />
+
+      <Panel className="border-foreground">
+        <PanelHead
+          title="Tự đăng ký bằng user id"
+          hint="không cần tạo token cho từng máy"
+          action={
+            <button
+              type="button"
+              className="btn btn-solid"
+              onClick={() => void copyText(ownerId, 'user id')}
+              disabled={!ownerId}
+            >
+              Copy user id
+            </button>
+          }
+        />
+        <div className="flex flex-col gap-3 px-4 py-4">
+          <p className="text-[12px] leading-relaxed text-muted-foreground text-pretty">
+            Dán user id vào script trên mỗi VPS. Máy tự gửi <span className="num text-foreground">hostname</span> lên
+            làm mã VPS, và lô đầu tiên sẽ tự tạo nút trong sổ cái — không phải đăng ký tay.
+          </p>
+          <p className="num break-all border border-border bg-secondary px-3 py-2.5 text-[12px]">
+            {ownerId || 'Đang tải user id…'}
+          </p>
+          <pre className="scroll-x border border-border bg-secondary px-3 py-2.5 font-mono text-[11px] leading-relaxed">
+            {autoSnippet}
+          </pre>
+          <p className="text-[12px] leading-relaxed text-muted-foreground text-pretty">
+            Lưu ý: user id là định danh công khai, không phải khoá bí mật — ai biết user id đều ghi được proxy vào sổ
+            cái của bạn, và user id thì không đổi được. Muốn an toàn hơn, dùng token riêng cho từng VPS ở khung bên dưới.
+          </p>
+        </div>
+      </Panel>
 
       {issued ? (
         <Panel className="border-foreground">
@@ -116,7 +158,7 @@ export default function NodesPage() {
             title={`Token của ${issued.id}`}
             hint="chỉ hiện một lần"
             action={
-              <button type="button" className="btn btn-solid" onClick={() => void copyToken(issued.token)}>
+              <button type="button" className="btn btn-solid" onClick={() => void copyText(issued.token, 'token')}>
                 Copy token
               </button>
             }
@@ -248,7 +290,7 @@ export default function NodesPage() {
         ) : (
           <EmptyState
             title={isLoading ? 'Đang tải' : 'Chưa có VPS nào'}
-            body="Tạo VPS đầu tiên ở khung bên trên, rồi dán token vào script thu thập trên máy đó."
+            body="Chưa máy nào gửi dữ liệu. Dán user id vào script thu thập — máy sẽ tự xuất hiện ở đây sau lô đầu tiên."
           />
         )}
       </Panel>
