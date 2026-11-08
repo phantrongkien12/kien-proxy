@@ -12,7 +12,6 @@ export const dynamic = 'force-dynamic'
 const CHECK_BATCH_SIZE = 10
 const CHECK_CONCURRENCY = 3
 const EXPORT_LIMIT = 5000
-const DEMO_NODE = 'DEMO-01'
 
 type Admin = ReturnType<typeof createAdminClient>
 
@@ -69,93 +68,6 @@ async function collectForExport(admin: Admin, filters: Record<string, unknown>, 
   }
 
   return rows.slice(0, limit)
-}
-
-function makeRandom(seed: number) {
-  let state = seed >>> 0
-  return () => {
-    state = (state * 1664525 + 1013904223) >>> 0
-    return state / 0x100000000
-  }
-}
-
-/**
- * `proxies` is unique on (host, port, protocol, username), so demo identities
- * have to be drawn without replacement — independent random picks collide
- * often enough to fail the whole batch insert.
- */
-function pickUniqueIdentity(
-  random: () => number,
-  ranges: string[],
-  ports: number[],
-  protocols: string[],
-  seen: Set<string>,
-) {
-  for (let attempt = 0; attempt < 200; attempt += 1) {
-    const range = ranges[Math.floor(random() * ranges.length)]
-    const host = `${range}.${1 + Math.floor(random() * 254)}`
-    const port = ports[Math.floor(random() * ports.length)]
-    const protocol = protocols[Math.floor(random() * protocols.length)]
-    const username = random() < 0.3 ? `u${1000 + Math.floor(random() * 8999)}` : ''
-    const key = `${host}:${port}:${protocol}:${username}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    return { host, port, protocol, username }
-  }
-  return null
-}
-
-/**
- * Demo rows use the RFC 5737 documentation ranges (192.0.2.0/24, 198.51.100.0/24,
- * 203.0.113.0/24) so a seeded ledger can never point at a real host.
- */
-function buildDemoRows() {
-  const random = makeRandom(20261108)
-  const ranges = ['192.0.2', '198.51.100', '203.0.113']
-  const ports = [80, 8080, 3128, 1080, 1081, 8000, 8888, 4145, 9050, 10808, 3129, 8118]
-  const protocols = ['HTTP', 'HTTP', 'HTTP', 'HTTP', 'SOCKS5', 'SOCKS5', 'SOCKS5', 'SOCKS4', 'SOCKS4', 'HTTPS']
-  const perDay = [18, 24, 31, 27, 42, 38, 55, 61, 48, 72, 66, 84]
-  const rows: Array<Record<string, unknown>> = []
-  const batches: Array<Record<string, unknown>> = []
-  const seen = new Set<string>()
-  const now = Date.now()
-
-  perDay.forEach((count, dayIndex) => {
-    const daysAgo = perDay.length - 1 - dayIndex
-    const dayStart = now - daysAgo * 86400000
-
-    for (let i = 0; i < count; i += 1) {
-      const identity = pickUniqueIdentity(random, ranges, ports, protocols, seen)
-      if (!identity) continue
-
-      const roll = random()
-      const status: CheckStatus = roll < 0.55 ? 'untested' : roll < 0.8 ? 'healthy' : roll < 0.92 ? 'suspect' : 'dead'
-      const lastSeen = new Date(dayStart - Math.floor(random() * 20) * 3600000).toISOString()
-
-      rows.push({
-        ...identity,
-        password: identity.username ? `p${random().toString(36).slice(2, 10)}` : '',
-        node_id: DEMO_NODE,
-        first_seen: lastSeen,
-        last_seen: lastSeen,
-        check_status: status,
-        checked_at: status === 'untested' ? null : lastSeen,
-        check_failures: status === 'dead' ? 2 : status === 'suspect' ? 1 : 0,
-      })
-    }
-
-    const batchCount = 2 + Math.floor(random() * 3)
-    for (let b = 0; b < batchCount; b += 1) {
-      batches.push({
-        node_id: DEMO_NODE,
-        batch_id: `demo-${daysAgo}-${b}`,
-        accepted: 40 + Math.floor(random() * 260),
-        created_at: new Date(dayStart - Math.floor(random() * 18) * 3600000).toISOString(),
-      })
-    }
-  })
-
-  return { rows, batches }
 }
 
 export async function GET(request: NextRequest) {
@@ -367,36 +279,6 @@ export async function POST(request: NextRequest) {
     const { error } = await admin.from('nodes').delete().eq('id', id)
     if (error) return fail(error.message, 500)
     return NextResponse.json({ removed: id })
-  }
-
-  if (action === 'seed') {
-    const { rows, batches } = buildDemoRows()
-    await admin.from('proxies').delete().eq('node_id', DEMO_NODE)
-    await admin.from('ingest_batches').delete().eq('node_id', DEMO_NODE)
-    await admin.from('nodes').delete().eq('id', DEMO_NODE)
-
-    const { error: nodeError } = await admin
-      .from('nodes')
-      .insert({ id: DEMO_NODE, token_hash: createHash('sha256').update(`demo:${randomBytes(8).toString('hex')}`).digest('hex'), total: rows.length })
-    if (nodeError) return fail(nodeError.message, 500)
-
-    const { error: proxyError } = await admin.from('proxies').insert(rows)
-    if (proxyError) {
-      await admin.from('nodes').delete().eq('id', DEMO_NODE)
-      return fail(proxyError.message, 500)
-    }
-
-    const { error: batchError } = await admin.from('ingest_batches').insert(batches)
-    if (batchError) return fail(batchError.message, 500)
-
-    return NextResponse.json({ seeded: rows.length })
-  }
-
-  if (action === 'unseed') {
-    await admin.from('proxies').delete().eq('node_id', DEMO_NODE)
-    await admin.from('ingest_batches').delete().eq('node_id', DEMO_NODE)
-    await admin.from('nodes').delete().eq('id', DEMO_NODE)
-    return NextResponse.json({ removed: DEMO_NODE })
   }
 
   return fail('Không rõ action', 404)
