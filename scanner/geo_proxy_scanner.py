@@ -244,7 +244,7 @@ class GeoProxyScanner:
                 if not self.is_running:
                     break
                 log = Path(tmpdir) / f"zmap-{port}.log"
-                command = ["zmap", "-p", str(port), "-w", str(allowlist),
+                command = ["stdbuf", "-oL", "zmap", "-p", str(port), "-w", str(allowlist),
                            "-b", str(ZMAP_BLOCKLIST), "-r", str(ZMAP_RATE),
                            "-n", str(ZMAP_MAX_TARGETS), "-e", str(secrets.randbits(32)),
                            "-o", "-", "-q"]
