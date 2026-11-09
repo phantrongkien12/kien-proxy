@@ -126,7 +126,7 @@ pnpm exec tsc --noEmit
 
 Nếu tiếp tục làm việc trong v0, có thể dùng **Publish**. Worker phải trỏ đến URL HTTPS của bản đã deploy, không dùng URL preview tạm thời.
 
-ZMap và scanner chạy tr��n VPS, **không chạy bên trong Vercel**. Vercel chỉ nhận dữ liệu, hiển thị dashboard và thực hiện các phép kiểm tra proxy theo yêu cầu.
+ZMap và scanner chạy tr����n VPS, **không chạy bên trong Vercel**. Vercel chỉ nhận dữ liệu, hiển thị dashboard và thực hiện các phép kiểm tra proxy theo yêu cầu.
 
 ## 5. Một VPS Linux: cài một lần, không nhập lại cấu hình
 
@@ -140,7 +140,9 @@ ZMap và scanner chạy tr��n VPS, **không chạy bên trong Vercel**. Verc
 
 ### Cài lần đầu trên VPS — một lệnh, không cần file
 
-VPS cần Linux, root/sudo và quyền raw socket. Installer hỗ trợ package manager `apt-get`, `dnf`, `yum`, `apk`, `pacman`, `zypper`. Kho gói phải có ZMap/requests; một số bản RHEL/Alma/Rocky hoặc Alpine cần bật kho EPEL/community tương ứng.
+VPS cần Linux, root/sudo và quyền raw socket. Installer hỗ trợ package manager `apt-get`, `dnf`, `yum`, `apk`, `pacman`, `zypper`.
+
+Installer chỉ cài gói **thật sự thiếu**, nên không đụng vào `curl-minimal` của Amazon Linux 2023 (cài gói `curl` trên máy đó gây xung đột dnf). ZMap không có trong kho mặc định của RHEL/Alma/Rocky/Amazon Linux: installer tự thử bật EPEL, nếu vẫn thiếu thì báo rõ để bạn cài tay. Thiếu `requests` thì installer thử gói của distro, rồi tự cài `pip` và cài qua pip.
 
 Ba chế độ khởi động, installer tự chọn:
 

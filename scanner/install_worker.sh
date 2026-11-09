@@ -77,31 +77,111 @@ pick_python() {
   else PYTHON=$(command -v python3 2>/dev/null || true)
   fi
 }
+has_requests() {
+  [ -n "$PYTHON" ] && "$PYTHON" -c 'import requests' >/dev/null 2>&1
+}
+
+has_ca_bundle() {
+  [ -f /etc/ssl/certs/ca-certificates.crt ] || [ -f /etc/pki/tls/certs/ca-bundle.crt ]
+}
+
+if command -v apt-get >/dev/null 2>&1; then PKG_MANAGER=apt
+elif command -v dnf >/dev/null 2>&1; then PKG_MANAGER=dnf
+elif command -v yum >/dev/null 2>&1; then PKG_MANAGER=yum
+elif command -v apk >/dev/null 2>&1; then PKG_MANAGER=apk
+elif command -v pacman >/dev/null 2>&1; then PKG_MANAGER=pacman
+elif command -v zypper >/dev/null 2>&1; then PKG_MANAGER=zypper
+else PKG_MANAGER=unknown
+fi
+
+package_name() {
+  case "$PKG_MANAGER:$1" in
+    apt:python) printf '%s' python3 ;;
+    apt:requests) printf '%s' python3-requests ;;
+    apk:python) printf '%s' python3 ;;
+    apk:requests) printf '%s' py3-requests ;;
+    pacman:python) printf '%s' python ;;
+    pacman:requests) printf '%s' python-requests ;;
+    *:python) printf '%s' python3 ;;
+    *:requests) printf '%s' python3-requests ;;
+    *:zmap) printf '%s' zmap ;;
+    *:curl) printf '%s' curl ;;
+    *:ca) printf '%s' ca-certificates ;;
+  esac
+}
+
 pick_python
-if [ -z "$PYTHON" ] || ! "$PYTHON" -c 'import requests' >/dev/null 2>&1 \
-  || ! command -v zmap >/dev/null 2>&1 \
-  || { ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; }; then
-  printf '%s\n' 'Đang cài các gói còn thiếu; không thay đổi token đã lưu.'
-  if command -v apt-get >/dev/null 2>&1; then
-    apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-requests zmap curl ca-certificates
-  elif command -v dnf >/dev/null 2>&1; then
-    dnf install -y python3 python3-requests zmap curl ca-certificates
-  elif command -v yum >/dev/null 2>&1; then
-    yum install -y python3 python3-requests zmap curl ca-certificates
-  elif command -v apk >/dev/null 2>&1; then
-    apk add --no-cache python3 py3-requests zmap curl ca-certificates
-  elif command -v pacman >/dev/null 2>&1; then
-    pacman -S --needed --noconfirm python python-requests zmap curl ca-certificates
-  elif command -v zypper >/dev/null 2>&1; then
-    zypper --non-interactive install python3 python3-requests zmap curl ca-certificates
-  else
+NEED_PYTHON=
+NEED_REQUESTS=
+NEED_ZMAP=
+NEED_CURL=
+NEED_CA=
+[ -n "$PYTHON" ] || NEED_PYTHON=1
+has_requests || NEED_REQUESTS=1
+command -v zmap >/dev/null 2>&1 || NEED_ZMAP=1
+command -v curl >/dev/null 2>&1 || NEED_CURL=1
+has_ca_bundle || NEED_CA=1
+
+if [ -n "$NEED_PYTHON$NEED_REQUESTS$NEED_ZMAP$NEED_CURL$NEED_CA" ]; then
+  if [ "$PKG_MANAGER" = unknown ]; then
     fail 'Không nhận diện được package manager. Cài Python 3, requests, ZMap và curl/wget rồi chạy lại; không cần tạo lại token.'
   fi
+  PACKAGES=
+  if [ -n "$NEED_PYTHON" ]; then PACKAGES="$PACKAGES $(package_name python)"; fi
+  if [ -n "$NEED_REQUESTS" ]; then PACKAGES="$PACKAGES $(package_name requests)"; fi
+  if [ -n "$NEED_ZMAP" ]; then PACKAGES="$PACKAGES $(package_name zmap)"; fi
+  if [ -n "$NEED_CURL" ]; then PACKAGES="$PACKAGES $(package_name curl)"; fi
+  if [ -n "$NEED_CA" ]; then PACKAGES="$PACKAGES $(package_name ca)"; fi
+  printf '%s\n' "Đang cài các gói còn thiếu:$PACKAGES (không thay đổi token đã lưu)."
+  case "$PKG_MANAGER" in
+    apt)
+      apt-get update
+      DEBIAN_FRONTEND=noninteractive apt-get install -y $PACKAGES
+      ;;
+    dnf|yum) $PKG_MANAGER install -y $PACKAGES ;;
+    apk) apk add --no-cache $PACKAGES ;;
+    pacman) pacman -S --needed --noconfirm $PACKAGES ;;
+    zypper) zypper --non-interactive install $PACKAGES ;;
+  esac
 fi
+
 pick_python
 [ -n "$PYTHON" ] || fail 'Chưa có Python 3.'
-"$PYTHON" -c 'import requests' || fail 'Thiếu requests trong Python hệ thống.'
+
+if ! has_requests; then
+  printf '%s\n' 'Chưa có requests, thử bật EPEL rồi cài bằng pip...'
+  case "$PKG_MANAGER" in
+    dnf|yum)
+      $PKG_MANAGER install -y epel-release >/dev/null 2>&1 || true
+      $PKG_MANAGER install -y "$(package_name requests)" >/dev/null 2>&1 || true
+      ;;
+  esac
+  if ! has_requests; then
+    if ! "$PYTHON" -m pip --version >/dev/null 2>&1; then
+      case "$PKG_MANAGER" in
+        apt) DEBIAN_FRONTEND=noninteractive apt-get install -y python3-pip >/dev/null 2>&1 || true ;;
+        dnf|yum) $PKG_MANAGER install -y python3-pip >/dev/null 2>&1 || true ;;
+        apk) apk add --no-cache py3-pip >/dev/null 2>&1 || true ;;
+        pacman) pacman -S --needed --noconfirm python-pip >/dev/null 2>&1 || true ;;
+        zypper) zypper --non-interactive install python3-pip >/dev/null 2>&1 || true ;;
+      esac
+    fi
+    "$PYTHON" -m pip install --quiet requests >/dev/null 2>&1 \
+      || "$PYTHON" -m pip install --quiet --break-system-packages requests >/dev/null 2>&1 \
+      || true
+  fi
+fi
+has_requests || fail 'Thiếu requests trong Python hệ thống. Cài python3-requests hoặc pip install requests rồi chạy lại.'
+
+if ! command -v zmap >/dev/null 2>&1; then
+  case "$PKG_MANAGER" in
+    dnf|yum)
+      printf '%s\n' 'Chưa có zmap, thử bật EPEL...'
+      $PKG_MANAGER install -y epel-release >/dev/null 2>&1 || true
+      $PKG_MANAGER install -y zmap >/dev/null 2>&1 || true
+      ;;
+  esac
+fi
 command -v zmap >/dev/null 2>&1 || fail 'Thiếu ZMap. Kiểm tra kho gói của distro (ví dụ EPEL/community), cài zmap rồi chạy lại.'
 
 STAGE=$(mktemp -d)

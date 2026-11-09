@@ -190,6 +190,13 @@ assert scanner.INGEST_URL == config['url'] + '/api/ingest'
             self.assertIn(flag, script)
         self.assertIn('Chỉ dùng một trong --config hoặc --url/--node/--token.', script)
 
+    def test_installer_only_installs_missing_packages(self):
+        script = (Path(__file__).resolve().parent / 'install_worker.sh').read_text(encoding='utf-8')
+        self.assertNotIn('dnf install -y python3 python3-requests zmap curl ca-certificates', script)
+        self.assertNotIn('apt-get install -y python3 python3-requests zmap curl ca-certificates', script)
+        for marker in ('NEED_CURL', 'NEED_REQUESTS', 'NEED_ZMAP', 'package_name', 'epel-release', 'has_ca_bundle'):
+            self.assertIn(marker, script)
+
     def test_installer_supports_hosts_without_init_system(self):
         script = (Path(__file__).resolve().parent / 'install_worker.sh').read_text(encoding='utf-8')
         self.assertIn('INIT=none', script)
