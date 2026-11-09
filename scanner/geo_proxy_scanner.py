@@ -499,14 +499,19 @@ if __name__ == "__main__":
     print("=" * 50)
     automatic = os.getenv("SCANNER_AUTO", "").strip().lower() in ("1", "true", "yes")
     if automatic:
-        country = os.getenv("SCANNER_COUNTRY", "VN").strip().upper() or "VN"
         run_mode = os.getenv("SCANNER_MODE", "random").strip().lower()
         if run_mode not in ("country", "random"):
             raise SystemExit("SCANNER_MODE phải là country hoặc random")
+        country = os.getenv("SCANNER_COUNTRY", "").strip().upper()
+        if not country and run_mode == "country":
+            country = "VN"
         auto_random = os.getenv("SCANNER_FOLLOW_RANDOM", "1").strip().lower() in ("1", "true", "yes")
         ports_input = os.getenv("SCANNER_PORTS", "80,8080,3128,1080")
         threads_input = os.getenv("SCANNER_THREADS", "400")
-        print(f"[*] Tự chạy: {run_mode}, {country}, ports={ports_input}, threads={threads_input}")
+        if run_mode == "random":
+            print(f"[*] Tự chạy: {run_mode}, ports={ports_input}, threads={threads_input}")
+        else:
+            print(f"[*] Tự chạy: {run_mode}, {country}, ports={ports_input}, threads={threads_input}")
     else:
         print("Chọn chế độ quét:")
         print("  1. Quét theo Quốc gia (Sau đó tự động tiếp nối Random nếu muốn)")
