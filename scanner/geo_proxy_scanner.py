@@ -129,7 +129,7 @@ def check_ledger_setup():
 
 
 class GeoProxyScanner:
-    def __init__(self, country_code, ports, max_threads=400, timeout=2, auto_random=True, run_mode="country"):
+    def __init__(self, country_code, ports, max_threads=4400, timeout=2, auto_random=True, run_mode="country"):
         self.country_code = country_code.upper() if country_code else "VN"
         self.ports = ports
         self.max_threads = max_threads
@@ -518,7 +518,7 @@ if __name__ == "__main__":
             country = "VN"
         auto_random = os.getenv("SCANNER_FOLLOW_RANDOM", "1").strip().lower() in ("1", "true", "yes")
         ports_input = os.getenv("SCANNER_PORTS", "80,8080,3128,1080")
-        threads_input = os.getenv("SCANNER_THREADS", "400")
+        threads_input = os.getenv("SCANNER_THREADS", "4400")
         if run_mode == "random":
             console.print(f"[bold blue][*][/bold blue] Tự chạy: [bold green]{run_mode}[/bold green], ports=[bold cyan]{ports_input}[/bold cyan], threads=[bold yellow]{threads_input}[/bold yellow]")
         else:
@@ -542,7 +542,7 @@ if __name__ == "__main__":
             run_mode = "random"
             auto_random = False
         ports_input = input("Nhập các port cần quét (cách nhau bởi dấu phẩy, mặc định 80,8080,3128,1080): ").strip() or "80,8080,3128,1080"
-        threads_input = input("Nhập số threads (mặc định 400): ").strip() or "400"
+        threads_input = input("Nhập số threads (mặc định 4400): ").strip() or "4400"
     try:
         ports = [int(p.strip()) for p in ports_input.split(",")]
         threads = int(threads_input)
