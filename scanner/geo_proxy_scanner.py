@@ -329,7 +329,14 @@ class GeoProxyScanner:
                 continue
             headers = {"Authorization": f"Bearer {VPS_TOKEN}", "Content-Type": "application/json"}
             try:
-                res = requests.post(INGEST_URL, json=payload, headers=headers, timeout=30)
+                res = requests.post(INGEST_URL, json=payload, headers=headers, timeout=30, allow_redirects=False)
+                if 300 <= res.status_code < 400:
+                    # A redirect means the deployed app still guards /api/ingest behind
+                    # the login wall, so the POST lands on /login and comes back 405.
+                    target = res.headers.get("location", "")
+                    console.print(f"[bold red][!][/bold red] Ledger chuyển hướng [bold red]{res.status_code}[/bold red] → [yellow]{target}[/yellow]. App chưa deploy bản mới (thiếu /api/ingest trong PUBLIC_PATHS).")
+                    self.next_sync_at = time.monotonic() + 60
+                    break
                 try:
                     answer = res.json()
                 except ValueError:
