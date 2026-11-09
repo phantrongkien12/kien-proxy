@@ -19,6 +19,11 @@ import tempfile
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from worker_config import ConfigError, load_worker_environment
+from rich.console import Console
+from rich.panel import Panel
+from rich.text import Text
+
+console = Console()
 
 try:
     SAVED_WORKER_CONFIG = load_worker_environment()
@@ -102,7 +107,7 @@ def load_existing_ledger_config():
             if (data.get("url", "").rstrip("/") == LEDGER_URL
                     and data.get("node") and data.get("token")):
                 VPS_ID, VPS_TOKEN = data["node"], data["token"]
-                print(f"[*] Dùng cấu hình VPS {VPS_ID} từ {path.name}.")
+                console.print(f"[bold blue][*][/bold blue] Dùng cấu hình VPS [bold green]{VPS_ID}[/bold green] từ [bold yellow]{path.name}[/bold yellow].")
                 return
         except (OSError, ValueError, AttributeError):
             continue
@@ -119,8 +124,8 @@ def check_ledger_setup():
         raise SystemExit("Thiếu token. Tải cấu hình từ trang VPS rồi chạy install_worker.sh --config FILE, hoặc dùng fleet_config.json riêng tư.")
     if not re.fullmatch(r"[A-Za-z0-9._-]{3,64}", VPS_ID or ""):
         raise SystemExit("Sai VPS_ID.")
-    print(f"[*] Worker tự nhận diện: {VPS_ID}")
-    print(f"[*] Ingest: {INGEST_URL}")
+    console.print(f"[bold blue][*][/bold blue] Worker tự nhận diện: [bold green]{VPS_ID}[/bold green]")
+    console.print(f"[bold blue][*][/bold blue] Ingest: [bold cyan]{INGEST_URL}[/bold cyan]")
 
 
 class GeoProxyScanner:
@@ -153,7 +158,7 @@ class GeoProxyScanner:
         self.sync_thread.start()
 
     def fetch_country_cidrs(self, cc, aggregated=False):
-        print(f"[*] Đang lấy danh sách dải CIDR cho quốc gia: {cc}...")
+        console.print(f"[bold blue][*][/bold blue] Đang lấy danh sách dải CIDR cho quốc gia: [bold green]{cc}[/bold green]...")
         if not re.fullmatch(r"[A-Za-z]{2}", cc):
             raise ZoneDownloadError("Mã quốc gia không hợp lệ")
         url = (f"{ZONE_INDEX_URL}{cc.lower()}-aggregated.zone" if aggregated
@@ -169,7 +174,7 @@ class GeoProxyScanner:
                             cidrs.append(str(net))
                     except ValueError:
                         continue
-                print(f"[+] Tìm thấy {len(cidrs)} dải CIDR cho {cc}.")
+                console.print(f"[bold green][+][/bold green] Tìm thấy [bold yellow]{len(cidrs)}[/bold yellow] dải CIDR cho [bold green]{cc}[/bold green].")
                 if cidrs:
                     return cidrs
         except requests.RequestException as e:
@@ -188,11 +193,11 @@ class GeoProxyScanner:
                 self.country_codes = codes
                 self.remaining_countries = []
                 self.country_index_at = time.monotonic()
-                print(f"[*] Đã cập nhật danh mục {len(codes)} quốc gia.")
+                console.print(f"[bold blue][*][/bold blue] Đã cập nhật danh mục [bold green]{len(codes)}[/bold green] quốc gia.")
             except requests.RequestException as e:
                 if not self.country_codes:
                     raise ZoneDownloadError(f"Không tải được danh mục CIDR: {e}") from e
-                print(f"[!] Không cập nhật được danh mục; dùng danh mục hiện có: {e}")
+                console.print(f"[bold red][!][/bold red] Không cập nhật được danh mục; dùng danh mục hiện có: [yellow]{e}[/yellow]")
                 self.country_index_at = time.monotonic()
         if not self.remaining_countries:
             self.remaining_countries = self.country_codes[:]
@@ -213,7 +218,7 @@ class GeoProxyScanner:
             try:
                 cc, cidrs = self.next_random_patch()
             except ZoneDownloadError as e:
-                print(f"[!] {e}; sẽ thử tải lại sau 60 giây.")
+                console.print(f"[bold red][!][/bold red] [yellow]{e}[/yellow]; sẽ thử tải lại sau 60 giây.")
                 self.wait_between_patches(60)
                 continue
             self.run_phase(f"PATCH {cc}", cidrs)
@@ -243,7 +248,7 @@ class GeoProxyScanner:
                            "-b", str(ZMAP_BLOCKLIST), "-r", str(ZMAP_RATE),
                            "-n", str(ZMAP_MAX_TARGETS), "-e", str(secrets.randbits(32)),
                            "-o", "-", "-q"]
-                print(f"[*] ZMap port {port}: tối đa {ZMAP_MAX_TARGETS:,} IP, {ZMAP_RATE:,} gói/giây")
+                console.print(f"[bold blue][*][/bold blue] ZMap port [bold cyan]{port}[/bold cyan]: tối đa [bold yellow]{ZMAP_MAX_TARGETS:,}[/bold yellow] IP, [bold yellow]{ZMAP_RATE:,}[/bold yellow] gói/giây")
                 with log.open("w", encoding="utf-8") as errors:
                     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=errors, text=True)
                     try:
@@ -296,7 +301,7 @@ class GeoProxyScanner:
             os.replace(tmp_file, ready_file)
             return True
         except Exception as e:
-            print(f"[!] Lỗi ghi queue file: {e}")
+            console.print(f"[bold red][!][/bold red] Lỗi ghi queue file: [yellow]{e}[/yellow]")
             return False
 
     def background_sync_worker(self):
@@ -320,7 +325,7 @@ class GeoProxyScanner:
                 if not isinstance(payload.get("proxies"), list) or not payload["proxies"]:
                     raise ValueError("Lô dữ liệu trống")
             except (OSError, ValueError, KeyError, TypeError) as e:
-                print(f"[!] Không đọc được {rf.name}: {e}. Giữ file để kiểm tra thủ công.")
+                console.print(f"[bold red][!][/bold red] Không đọc được [bold yellow]{rf.name}[/bold yellow]: [yellow]{e}[/yellow]. Giữ file để kiểm tra thủ công.")
                 continue
             headers = {"Authorization": f"Bearer {VPS_TOKEN}", "Content-Type": "application/json"}
             try:
@@ -332,15 +337,15 @@ class GeoProxyScanner:
                 if res.status_code == 200 and isinstance(answer.get("accepted"), int):
                     self.sent_count += answer["accepted"]
                     rf.unlink()
-                    print(f"[+] Đã nhận lô {rf.name}: accepted={answer['accepted']}, duplicate={answer.get('duplicate', False)}")
+                    console.print(f"[bold green][+][/bold green] Đã nhận lô [bold yellow]{rf.name}[/bold yellow]: accepted=[bold green]{answer['accepted']}[/bold green], duplicate=[bold red]{answer.get('duplicate', False)}[/bold red]")
                 else:
                     reason = str(answer.get("error", ""))[:120] if isinstance(answer, dict) else ""
-                    print(f"[!] Ledger HTTP {res.status_code} {reason}. Giữ {rf.name} để gửi lại.")
+                    console.print(f"[bold red][!][/bold red] Ledger HTTP [bold red]{res.status_code}[/bold red] [yellow]{reason}[/yellow]. Giữ [bold yellow]{rf.name}[/bold yellow] để gửi lại.")
                     self.next_sync_at = time.monotonic() + (60 if res.status_code in (401, 403, 413, 429) else 10)
                     if res.status_code in (401, 403, 413, 429):
                         break
             except requests.RequestException as e:
-                print(f"[!] Gửi lỗi ({type(e).__name__}); giữ {rf.name} để thử lại.")
+                console.print(f"[bold red][!][/bold red] Gửi lỗi ([bold red]{type(e).__name__}[/bold red]); giữ [bold yellow]{rf.name}[/bold yellow] để thử lại.")
                 self.next_sync_at = time.monotonic() + 10
                 break
 
@@ -445,31 +450,31 @@ class GeoProxyScanner:
                 self.test_proxy_handshake(ip, port)
                 with self.lock:
                     if self.checked_count % 10 == 0:
-                        sys.stdout.write(f"\r[*] Đang quét: Đã kiểm tra {self.checked_count} cổng mở | Live: {self.verified_count}")
+                        sys.stdout.write(f"\r\033[1;34m[*]\033[0m Đang quét: Đã kiểm tra \033[1;33m{self.checked_count}\033[0m cổng mở | Live: \033[1;32m{self.verified_count}\033[0m")
                         sys.stdout.flush()
             finally:
                 self.ip_queue.task_done()
 
     def run_phase(self, phase_name, cidrs):
-        print(f"\n=== BẮT ĐẦU PHA: {phase_name} ===")
+        console.print(f"\n[bold magenta]=== BẮT ĐẦU PHA: {phase_name} ===[/bold magenta]")
         before_checked = self.checked_count
         before_verified = self.verified_count
         self.phase_done.clear()
-        print(f"[*] Quét với {self.max_threads} threads và hàng đợi giới hạn 2.000 mục tiêu...")
+        console.print(f"[bold blue][*][/bold blue] Quét với [bold yellow]{self.max_threads}[/bold yellow] threads và hàng đợi giới hạn [bold yellow]2.000[/bold yellow] mục tiêu...")
         with ThreadPoolExecutor(max_workers=self.max_threads) as executor:
             workers = [executor.submit(self.worker) for _ in range(self.max_threads)]
             try:
                 total = self.enqueue_zmap_results(cidrs)
-                print(f"[*] ZMap tìm thấy {total} cổng mở; đợi kiểm tra proxy hoàn tất...")
+                console.print(f"[bold blue][*][/bold blue] ZMap tìm thấy [bold green]{total}[/bold green] cổng mở; đợi kiểm tra proxy hoàn tất...")
             except KeyboardInterrupt:
-                print("\n[!] Dừng quét theo yêu cầu...")
+                console.print("\n[bold red][!] Dừng quét theo yêu cầu...[/bold red]")
                 self.is_running = False
             finally:
                 self.phase_done.set()
             self.ip_queue.join()
             for future in workers:
                 future.result()
-        print(f"[*] Patch xong: {self.verified_count - before_verified}/{self.checked_count - before_checked} cổng mở đã xác minh qua TLS.")
+        console.print(f"[bold blue][*][/bold blue] Patch xong: [bold green]{self.verified_count - before_verified}[/bold green]/[bold yellow]{self.checked_count - before_checked}[/bold yellow] cổng mở đã xác minh qua TLS.")
 
     def run_pipeline(self):
         try:
@@ -479,13 +484,13 @@ class GeoProxyScanner:
                     self.run_phase(f"COUNTRY ({self.country_code})", country_cidrs)
 
                 if self.auto_random and self.is_running:
-                    print("\n[*] Hoàn thành quốc gia; chuyển sang các patch ngẫu nhiên liên tục...")
+                    console.print("\n[bold blue][*][/bold blue] Hoàn thành quốc gia; chuyển sang các patch ngẫu nhiên liên tục...")
                     self.run_random_forever()
             else:
                 self.run_random_forever()
         except KeyboardInterrupt:
             self.is_running = False
-            print("\n[*] Đang dừng scanner và gửi lô cuối...")
+            console.print("\n[bold blue][*][/bold blue] Đang dừng scanner và gửi lô cuối...")
         finally:
             with self.lock:
                 self.check_batch_flush(force=True)
@@ -493,14 +498,16 @@ class GeoProxyScanner:
             self.sync_ready_once()
 
         pending = len(list(QUEUE_DIR.glob("*.ready")))
-        print(f"\n[*] Đã được ledger xác nhận: {self.sent_count} proxy. Lô đang chờ gửi lại: {pending}.")
+        console.print(f"\n[bold blue][*][/bold blue] Đã được ledger xác nhận: [bold green]{self.sent_count}[/bold green] proxy. Lô đang chờ gửi lại: [bold yellow]{pending}[/bold yellow].")
 
 
 if __name__ == "__main__":
     check_ledger_setup()
-    print("=" * 50)
-    print("    KIENCOMMUNITY — PROXY SCANNER CLI")
-    print("=" * 50)
+    console.print(Panel(
+        Text("KIENCOMMUNITY — PROXY SCANNER CLI", style="bold green", justify="center"),
+        subtitle="[bold blue]Massive IP Range Scanning & Verification[/bold blue]",
+        border_style="green"
+    ))
     automatic = os.getenv("SCANNER_AUTO", "").strip().lower() in ("1", "true", "yes")
     if automatic:
         run_mode = os.getenv("SCANNER_MODE", "random").strip().lower()
@@ -513,13 +520,13 @@ if __name__ == "__main__":
         ports_input = os.getenv("SCANNER_PORTS", "80,8080,3128,1080")
         threads_input = os.getenv("SCANNER_THREADS", "400")
         if run_mode == "random":
-            print(f"[*] Tự chạy: {run_mode}, ports={ports_input}, threads={threads_input}")
+            console.print(f"[bold blue][*][/bold blue] Tự chạy: [bold green]{run_mode}[/bold green], ports=[bold cyan]{ports_input}[/bold cyan], threads=[bold yellow]{threads_input}[/bold yellow]")
         else:
-            print(f"[*] Tự chạy: {run_mode}, {country}, ports={ports_input}, threads={threads_input}")
+            console.print(f"[bold blue][*][/bold blue] Tự chạy: [bold green]{run_mode}[/bold green], [bold green]{country}[/bold green], ports=[bold cyan]{ports_input}[/bold cyan], threads=[bold yellow]{threads_input}[/bold yellow]")
     else:
-        print("CHỌN CHẾ ĐỘ QUÉT:")
-        print("  1. Quét theo Quốc gia (Nhập mã ISO, ví dụ: VN, US, JP)")
-        print("  2. Quét Random (Dải IP mạng toàn cầu)")
+        console.print("[bold yellow]CHỌN CHẾ ĐỘ QUÉT:[/bold yellow]")
+        console.print("  [bold green]1.[/bold green] Quét theo Quốc gia (Nhập mã ISO, ví dụ: VN, US, JP)")
+        console.print("  [bold green]2.[/bold green] Quét Random (Dải IP mạng toàn cầu)")
         choice = input("\nLựa chọn của G45 [1/2]: ").strip()
         country = "VN"
         run_mode = "country"
@@ -531,7 +538,7 @@ if __name__ == "__main__":
             run_mode = "random"
             auto_random = False
         else:
-            print("[!] Lựa chọn không hợp lệ, mặc định quét Random.")
+            console.print("[bold red][!] Lựa chọn không hợp lệ, mặc định quét Random.[/bold red]")
             run_mode = "random"
             auto_random = False
         ports_input = input("Nhập các port cần quét (cách nhau bởi dấu phẩy, mặc định 80,8080,3128,1080): ").strip() or "80,8080,3128,1080"
