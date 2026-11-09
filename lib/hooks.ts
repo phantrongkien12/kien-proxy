@@ -48,7 +48,7 @@ export function useActivity() {
 }
 
 export function useDeadCount() {
-  return useSWR<{ dead: number }>('/api/dashboard?view=health', fetcher, live)
+  return useSWR<{ dead: number; total: number }>('/api/dashboard?view=health', fetcher, live)
 }
 
 export function useConfig() {

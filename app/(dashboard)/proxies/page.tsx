@@ -39,6 +39,8 @@ export default function ProxiesPage() {
   const [secrets, setSecrets] = useState(false)
   const [checkingId, setCheckingId] = useState<number | null>(null)
   const [purging, setPurging] = useState(false)
+  const [wiping, setWiping] = useState(false)
+  const [confirmWipe, setConfirmWipe] = useState(false)
 
   const appliedRef = useRef('')
 
@@ -62,6 +64,13 @@ export default function ProxiesPage() {
   const to = Math.min(page * size, total)
   const percent = job.total ? Math.min(100, Math.round((job.checked / job.total) * 100)) : 0
   const deadCount = health?.dead ?? 0
+  const totalCount = health?.total ?? 0
+
+  useEffect(() => {
+    if (!confirmWipe) return
+    const timer = setTimeout(() => setConfirmWipe(false), 6000)
+    return () => clearTimeout(timer)
+  }, [confirmWipe])
 
   async function checkOne(proxy: ProxyRow) {
     setCheckingId(proxy.id)
@@ -99,6 +108,22 @@ export default function ProxiesPage() {
       push(caught instanceof Error ? caught.message : 'Không xoá được', 'error')
     } finally {
       setPurging(false)
+    }
+  }
+
+  async function wipeAll() {
+    setWiping(true)
+    try {
+      const result = await post<{ removed: number }>({ action: 'delete-all' })
+      push(`Đã xoá toàn bộ ${formatNumber(result.removed)} proxy khỏi sổ`)
+      setConfirmWipe(false)
+      await revalidate()
+      await mutate('/api/dashboard?view=overview')
+      await mutate('/api/dashboard?view=health')
+    } catch (caught) {
+      push(caught instanceof Error ? caught.message : 'Không xoá được', 'error')
+    } finally {
+      setWiping(false)
     }
   }
 
@@ -202,6 +227,34 @@ export default function ProxiesPage() {
               {purging ? <Spinner /> : null}
               Xoá proxy chết
             </button>
+            {confirmWipe ? (
+              <>
+                <span role="alert" className="text-[11px] text-destructive">
+                  Xoá vĩnh viễn toàn bộ {formatNumber(totalCount)} proxy, không khôi phục được.
+                </span>
+                <button type="button" className="btn btn-danger" onClick={wipeAll} disabled={wiping}>
+                  {wiping ? <Spinner /> : null}
+                  Xác nhận xoá tất cả
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => setConfirmWipe(false)}
+                  disabled={wiping}
+                >
+                  Huỷ
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={() => setConfirmWipe(true)}
+                disabled={wiping || totalCount === 0}
+              >
+                Xoá tất cả
+              </button>
+            )}
           </div>
         </div>
       </Panel>

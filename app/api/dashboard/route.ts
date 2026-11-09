@@ -121,9 +121,13 @@ export async function GET(request: NextRequest) {
   }
 
   if (view === 'health') {
-    const { data, error } = await admin.rpc('dead_proxy_count')
-    if (error) return fail(error.message, 500)
-    return NextResponse.json({ dead: Number(data ?? 0) })
+    const [dead, total] = await Promise.all([
+      admin.rpc('dead_proxy_count'),
+      admin.from('proxies').select('id', { count: 'exact', head: true }),
+    ])
+    if (dead.error) return fail(dead.error.message, 500)
+    if (total.error) return fail(total.error.message, 500)
+    return NextResponse.json({ dead: Number(dead.data ?? 0), total: total.count ?? 0 })
   }
 
   if (view === 'config') {
@@ -261,6 +265,12 @@ export async function POST(request: NextRequest) {
 
   if (action === 'delete-dead') {
     const { data, error } = await admin.rpc('delete_dead_proxies', { p_limit: 2000 })
+    if (error) return fail(error.message, 500)
+    return NextResponse.json({ removed: Number(data ?? 0) })
+  }
+
+  if (action === 'delete-all') {
+    const { data, error } = await admin.rpc('delete_all_proxies')
     if (error) return fail(error.message, 500)
     return NextResponse.json({ removed: Number(data ?? 0) })
   }
