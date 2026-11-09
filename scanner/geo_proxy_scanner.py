@@ -380,49 +380,102 @@ class GeoProxyScanner:
                 self.next_sync_at = time.monotonic() + 10
                 break
 
-    def test_http_connect(self, ip, port):
-        try:
-            with socket.create_connection((ip, port), timeout=self.timeout) as s:
-                s.settimeout(self.timeout)
-                s.sendall(b"GET http://httpbin.org/ip HTTP/1.1\r\nHost: httpbin.org\r\nConnection: close\r\n\r\n")
-                resp = s.recv(1024)
-                if b"HTTP/" in resp and (b"200 OK" in resp or b"origin" in resp):
-                    return True
-        except Exception:
-            pass
-        return False
+    def _read_exactly(self, sock, size):
+        data = b""
+        while len(data) < size:
+            chunk = sock.recv(size - len(data))
+            if not chunk:
+                raise OSError("Kết nối bị đóng")
+            data += chunk
+        return data
 
-    def test_socks5(self, ip, port):
-        try:
-            with socket.create_connection((ip, port), timeout=self.timeout) as s:
-                s.settimeout(self.timeout)
-                s.sendall(b"\x05\x01\x00")
-                socks_resp = s.recv(2)
-                if len(socks_resp) == 2 and socks_resp[0] == 0x05:
-                    return True
-        except Exception:
-            pass
-        return False
+    def _read_http_header(self, sock, limit=8192):
+        # Phải đọc hết cả khối header tới \r\n\r\n, không chỉ dòng trạng thái:
+        # CRLF cuối header còn sót lại sẽ bị wrap_socket đọc như byte đầu của
+        # TLS record và làm hỏng bắt tay.
+        data = b""
+        while b"\r\n\r\n" not in data and len(data) < limit:
+            chunk = sock.recv(1)
+            if not chunk:
+                break
+            data += chunk
+        return data.decode("latin1", "replace")
 
-    def test_socks4(self, ip, port):
+    def _open_tunnel(self, ip, port, protocol):
+        # Cổng mở chưa chứng minh được gì: proxy phải thật sự chuyển tiếp
+        # traffic ra ngoài. Vì vậy sau khi bắt tay phải gửi CONNECT tới một
+        # đích thật và đọc mã trả lời, thay vì chỉ nghe câu chào.
+        sock = socket.create_connection((ip, port), timeout=self.timeout)
         try:
-            with socket.create_connection((ip, port), timeout=self.timeout) as s:
-                s.settimeout(self.timeout)
-                s.sendall(b"\x04\x01\x00\x50\x7f\x00\x00\x01\x00")
-                socks4_resp = s.recv(8)
-                if len(socks4_resp) >= 2 and socks4_resp[1] == 0x5a:
-                    return True
+            sock.settimeout(self.timeout)
+            if protocol == "HTTP":
+                sock.sendall(
+                    f"CONNECT {VERIFY_HOST}:{VERIFY_PORT} HTTP/1.1\r\n"
+                    f"Host: {VERIFY_HOST}:{VERIFY_PORT}\r\n\r\n".encode()
+                )
+                if not re.match(r"^HTTP/1\.[01] 200", self._read_http_header(sock)):
+                    raise OSError("Proxy từ chối CONNECT")
+            elif protocol == "SOCKS5":
+                sock.sendall(b"\x05\x01\x00")
+                version, method = self._read_exactly(sock, 2)
+                if version != 0x05 or method != 0x00:
+                    raise OSError("Không phải SOCKS5 không cần xác thực")
+                host = VERIFY_HOST.encode()
+                sock.sendall(
+                    b"\x05\x01\x00\x03" + bytes([len(host)]) + host
+                    + bytes([VERIFY_PORT >> 8, VERIFY_PORT & 0xFF])
+                )
+                reply = self._read_exactly(sock, 4)
+                if reply[1] != 0x00:
+                    raise OSError("Proxy từ chối kết nối")
+                if reply[3] == 0x01:
+                    address_length = 4
+                elif reply[3] == 0x04:
+                    address_length = 16
+                else:
+                    address_length = self._read_exactly(sock, 1)[0]
+                self._read_exactly(sock, address_length + 2)
+            elif protocol == "SOCKS4":
+                host = VERIFY_HOST.encode()
+                sock.sendall(
+                    b"\x04\x01" + bytes([VERIFY_PORT >> 8, VERIFY_PORT & 0xFF])
+                    + b"\x00\x00\x00\x01\x00" + host + b"\x00"
+                )
+                if self._read_exactly(sock, 8)[1] != 0x5A:
+                    raise OSError("Proxy từ chối kết nối")
+            else:
+                raise OSError("Giao thức chưa hỗ trợ kiểm tra")
+            return sock
         except Exception:
-            pass
-        return False
+            sock.close()
+            return None
+
+    def _verify_tls(self, sock):
+        # Bọc TLS thật qua tunnel. tls_context xác thực chứng chỉ, nên proxy
+        # chèn giữa hoặc chuyển hướng sai đích sẽ bị loại ở bước này.
+        sock.settimeout(PROXY_VERIFY_TIMEOUT)
+        tls_sock = self.tls_context.wrap_socket(sock, server_hostname=VERIFY_HOST)
+        try:
+            tls_sock.sendall(
+                f"HEAD / HTTP/1.1\r\nHost: {VERIFY_HOST}\r\nConnection: close\r\n\r\n".encode()
+            )
+            if not re.match(r"^HTTP/1\.[01] \d{3}", self._read_http_header(tls_sock)):
+                raise OSError("Phản hồi không hợp lệ")
+        finally:
+            tls_sock.close()
 
     def test_proxy_handshake(self, ip, port):
         with self.lock:
             self.checked_count += 1
-        for protocol, probe in (("HTTP", self.test_http_connect), ("SOCKS5", self.test_socks5), ("SOCKS4", self.test_socks4)):
+        for protocol in ("HTTP", "SOCKS5", "SOCKS4"):
             try:
-                if not probe(ip, port):
+                sock = self._open_tunnel(ip, port, protocol)
+                if sock is None:
                     continue
+                try:
+                    self._verify_tls(sock)
+                finally:
+                    sock.close()
                 with self.lock:
                     self.verified_count += 1
                     print(f"\r[LIVE - {protocol} - TLS VERIFIED] {ip}:{port}                                     ")

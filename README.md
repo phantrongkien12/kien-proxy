@@ -33,6 +33,8 @@ Kho không tự được điền bằng seed. Muốn thấy proxy thật, cần 
 - Quyền root/sudo và raw socket vì ZMap cần thao tác mạng tương ứng.
 - Kết nối đến app đã deploy, IPdeny và đích kiểm tra TLS.
 
+Scanner chỉ nhận một cổng là proxy sau khi bắt tay và **gửi CONNECT thật tới `example.com:443`**, rồi **bọc TLS có xác thực chứng chỉ** qua tunnel đó — cùng chuẩn với phép kiểm tra của dashboard (`lib/probe.ts`). Cổng mở hoặc server chỉ "chào hỏi" mà không chuyển tiếp traffic không được tính là proxy sống, nên số proxy tìm được sẽ ít hơn nhưng tất cả đều dùng được thật.
+
 Chỉ vận hành scanner trên phạm vi bạn được phép kiểm tra và theo chính sách của nhà cung cấp VPS. Scanner tải dải IP theo quốc gia từ IPdeny; lựa chọn một quốc gia không đồng nghĩa có quyền quét mọi IP trong quốc gia đó.
 
 ## 2. Cấu hình Supabase
