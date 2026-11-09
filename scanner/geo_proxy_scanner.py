@@ -417,7 +417,7 @@ class GeoProxyScanner:
                     continue
                 with self.lock:
                     self.verified_count += 1
-                    print(f"[LIVE - {protocol} - TLS VERIFIED] {ip}:{port}")
+                    print(f"\r[LIVE - {protocol} - TLS VERIFIED] {ip}:{port}                                     ")
                     self.live_proxies.append({"host": ip, "port": port, "protocol": protocol, "username": "", "password": ""})
                     self.check_batch_flush()
                 return
@@ -443,6 +443,10 @@ class GeoProxyScanner:
                 continue
             try:
                 self.test_proxy_handshake(ip, port)
+                with self.lock:
+                    if self.checked_count % 10 == 0:
+                        sys.stdout.write(f"\r[*] Đang quét: Đã kiểm tra {self.checked_count} cổng mở | Live: {self.verified_count}")
+                        sys.stdout.flush()
             finally:
                 self.ip_queue.task_done()
 
@@ -495,7 +499,7 @@ class GeoProxyScanner:
 if __name__ == "__main__":
     check_ledger_setup()
     print("=" * 50)
-    print("    PROXY SCANNER & LEDGER INGEST")
+    print("    KIENCOMMUNITY — PROXY SCANNER CLI")
     print("=" * 50)
     automatic = os.getenv("SCANNER_AUTO", "").strip().lower() in ("1", "true", "yes")
     if automatic:
@@ -513,22 +517,24 @@ if __name__ == "__main__":
         else:
             print(f"[*] Tự chạy: {run_mode}, {country}, ports={ports_input}, threads={threads_input}")
     else:
-        print("Chọn chế độ quét:")
-        print("  1. Quét theo Quốc gia (Sau đó tự động tiếp nối Random nếu muốn)")
-        print("  2. Quét các patch quốc gia ngẫu nhiên liên tục (Ctrl+C để dừng)")
-        choice = input("\nLựa chọn [1/2]: ").strip()
+        print("CHỌN CHẾ ĐỘ QUÉT:")
+        print("  1. Quét theo Quốc gia (Nhập mã ISO, ví dụ: VN, US, JP)")
+        print("  2. Quét Random (Dải IP mạng toàn cầu)")
+        choice = input("\nLựa chọn của G45 [1/2]: ").strip()
         country = "VN"
         run_mode = "country"
         auto_random = True
         if choice == "1":
-            country = input("Nhập mã quốc gia (VD: VN, US, JP, SG): ").strip().upper() or "VN"
+            country = input("Nhập mã quốc gia (VD: VN, US): ").strip().upper() or "VN"
             auto_random = input("Tự động chuyển sang quét Random? (y/n, mặc định y): ").strip().lower() != 'n'
         elif choice == "2":
             run_mode = "random"
             auto_random = False
         else:
-            print("[!] Lựa chọn không hợp lệ, mặc định quét VN.")
-        ports_input = input("Nhập port (mặc định 80,8080,3128,1080): ").strip() or "80,8080,3128,1080"
+            print("[!] Lựa chọn không hợp lệ, mặc định quét Random.")
+            run_mode = "random"
+            auto_random = False
+        ports_input = input("Nhập các port cần quét (cách nhau bởi dấu phẩy, mặc định 80,8080,3128,1080): ").strip() or "80,8080,3128,1080"
         threads_input = input("Nhập số threads (mặc định 400): ").strip() or "400"
     try:
         ports = [int(p.strip()) for p in ports_input.split(",")]
