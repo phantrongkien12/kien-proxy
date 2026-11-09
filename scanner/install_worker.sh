@@ -80,6 +80,9 @@ pick_python() {
 has_requests() {
   [ -n "$PYTHON" ] && "$PYTHON" -c 'import requests' >/dev/null 2>&1
 }
+has_rich() {
+  [ -n "$PYTHON" ] && "$PYTHON" -c 'import rich' >/dev/null 2>&1
+}
 
 has_ca_bundle() {
   [ -f /etc/ssl/certs/ca-certificates.crt ] || [ -f /etc/pki/tls/certs/ca-bundle.crt ]
@@ -172,6 +175,22 @@ if ! has_requests; then
   fi
 fi
 has_requests || fail 'Thiếu requests trong Python hệ thống. Cài python3-requests hoặc pip install requests rồi chạy lại.'
+
+# rich chỉ dùng để tô màu log; thiếu nó worker vẫn chạy bình thường nên không fail.
+if ! has_rich; then
+  if ! "$PYTHON" -m pip --version >/dev/null 2>&1; then
+    case "$PKG_MANAGER" in
+      apt) DEBIAN_FRONTEND=noninteractive apt-get install -y python3-pip >/dev/null 2>&1 || true ;;
+      dnf|yum) $PKG_MANAGER install -y python3-pip >/dev/null 2>&1 || true ;;
+      apk) apk add --no-cache py3-pip >/dev/null 2>&1 || true ;;
+      pacman) pacman -S --needed --noconfirm python-pip >/dev/null 2>&1 || true ;;
+      zypper) zypper --non-interactive install python3-pip >/dev/null 2>&1 || true ;;
+    esac
+  fi
+  "$PYTHON" -m pip install --quiet rich >/dev/null 2>&1 \
+    || "$PYTHON" -m pip install --quiet --break-system-packages rich >/dev/null 2>&1 \
+    || true
+fi
 
 if ! command -v zmap >/dev/null 2>&1; then
   case "$PKG_MANAGER" in

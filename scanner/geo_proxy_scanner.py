@@ -19,11 +19,35 @@ import tempfile
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from worker_config import ConfigError, load_worker_environment
-from rich.console import Console
-from rich.panel import Panel
-from rich.text import Text
+try:
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.text import Text
 
-console = Console()
+    console = Console()
+except ModuleNotFoundError:
+    # rich only styles the output; fall back to plain text so a missing
+    # cosmetic dependency can never crash-loop the worker.
+    import re as _re
+
+    _MARKUP = _re.compile(
+        r"\[/?(?:bold|dim|italic|underline|red|green|yellow|blue|magenta|cyan|white|black|bright_[a-z]+)(?: [a-z_ ]+)?\]"
+    )
+
+    class _PlainConsole:
+        @staticmethod
+        def print(*args, **_kwargs):
+            print(_MARKUP.sub("", " ".join(str(a) for a in args)))
+
+    class _PlainText(str):
+        def __new__(cls, value="", **_kwargs):
+            return super().__new__(cls, value)
+
+    def Panel(content, **_kwargs):
+        return content
+
+    console = _PlainConsole()
+    Text = _PlainText
 
 try:
     SAVED_WORKER_CONFIG = load_worker_environment()
