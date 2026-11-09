@@ -533,7 +533,7 @@ if __name__ == "__main__":
     try:
         ports = [int(p.strip()) for p in ports_input.split(",")]
         threads = int(threads_input)
-        if not ports or any(p < 1 or p > 65535 for p in ports) or not (1 <= threads <= 2000):
+        if not ports or any(p < 1 or p > 65535 for p in ports) or not (1 <= threads <= 10000):
             raise ValueError()
     except ValueError:
         raise SystemExit("SCANNER_PORTS hoặc SCANNER_THREADS không hợp lệ")
