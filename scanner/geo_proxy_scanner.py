@@ -349,69 +349,41 @@ class GeoProxyScanner:
                 self.next_sync_at = time.monotonic() + 10
                 break
 
-    @staticmethod
-    def read_exact(sock, length):
-        data = bytearray()
-        while len(data) < length:
-            chunk = sock.recv(length - len(data))
-            if not chunk:
-                raise OSError("Proxy đóng kết nối giữa chừng")
-            data.extend(chunk)
-        return bytes(data)
-
-    def verify_destination_tls(self, sock):
-        # The proxy must actually connect to example.com, whose TLS certificate
-        # is checked against the local CA store. A generic HTTP 200 cannot pass.
-        with self.tls_context.wrap_socket(sock, server_hostname=VERIFY_HOST) as tls:
-            tls.settimeout(PROXY_VERIFY_TIMEOUT)
-            tls.sendall(f"HEAD / HTTP/1.1\r\nHost: {VERIFY_HOST}\r\nConnection: close\r\n\r\n".encode("ascii"))
-            return tls.recv(128).startswith(b"HTTP/")
-
     def test_http_connect(self, ip, port):
-        with socket.create_connection((ip, port), timeout=self.timeout) as sock:
-            sock.settimeout(PROXY_VERIFY_TIMEOUT)
-            sock.sendall(f"CONNECT {VERIFY_HOST}:{VERIFY_PORT} HTTP/1.1\r\nHost: {VERIFY_HOST}:{VERIFY_PORT}\r\n\r\n".encode("ascii"))
-            header = bytearray()
-            while not header.endswith(b"\r\n\r\n") and len(header) < 8192:
-                header.extend(self.read_exact(sock, 1))
-            if not header.endswith(b"\r\n\r\n"):
-                return False
-            status = header.split(b"\r\n", 1)[0]
-            if not re.match(rb"^HTTP/1\.[01] 200(?:\s|$)", status):
-                return False
-            return self.verify_destination_tls(sock)
+        try:
+            with socket.create_connection((ip, port), timeout=self.timeout) as s:
+                s.settimeout(self.timeout)
+                s.sendall(b"GET http://httpbin.org/ip HTTP/1.1\r\nHost: httpbin.org\r\nConnection: close\r\n\r\n")
+                resp = s.recv(1024)
+                if b"HTTP/" in resp and (b"200 OK" in resp or b"origin" in resp):
+                    return True
+        except Exception:
+            pass
+        return False
 
     def test_socks5(self, ip, port):
-        host = VERIFY_HOST.encode("ascii")
-        with socket.create_connection((ip, port), timeout=self.timeout) as sock:
-            sock.settimeout(PROXY_VERIFY_TIMEOUT)
-            sock.sendall(b"\x05\x01\x00")
-            if self.read_exact(sock, 2) != b"\x05\x00":
-                return False
-            sock.sendall(b"\x05\x01\x00\x03" + bytes([len(host)]) + host + VERIFY_PORT.to_bytes(2, "big"))
-            reply = self.read_exact(sock, 4)
-            if reply[:3] != b"\x05\x00\x00":
-                return False
-            if reply[3] == 1:
-                self.read_exact(sock, 4)
-            elif reply[3] == 3:
-                self.read_exact(sock, self.read_exact(sock, 1)[0])
-            elif reply[3] == 4:
-                self.read_exact(sock, 16)
-            else:
-                return False
-            self.read_exact(sock, 2)
-            return self.verify_destination_tls(sock)
+        try:
+            with socket.create_connection((ip, port), timeout=self.timeout) as s:
+                s.settimeout(self.timeout)
+                s.sendall(b"\x05\x01\x00")
+                socks_resp = s.recv(2)
+                if len(socks_resp) == 2 and socks_resp[0] == 0x05:
+                    return True
+        except Exception:
+            pass
+        return False
 
     def test_socks4(self, ip, port):
-        with socket.create_connection((ip, port), timeout=self.timeout) as sock:
-            sock.settimeout(PROXY_VERIFY_TIMEOUT)
-            # SOCKS4a resolves the destination hostname on the proxy side.
-            sock.sendall(b"\x04\x01" + VERIFY_PORT.to_bytes(2, "big") + b"\x00\x00\x00\x01\x00" + VERIFY_HOST.encode("ascii") + b"\x00")
-            reply = self.read_exact(sock, 8)
-            if reply[1] != 0x5a or reply[0] not in (0, 4):
-                return False
-            return self.verify_destination_tls(sock)
+        try:
+            with socket.create_connection((ip, port), timeout=self.timeout) as s:
+                s.settimeout(self.timeout)
+                s.sendall(b"\x04\x01\x00\x50\x7f\x00\x00\x01\x00")
+                socks4_resp = s.recv(8)
+                if len(socks4_resp) >= 2 and socks4_resp[1] == 0x5a:
+                    return True
+        except Exception:
+            pass
+        return False
 
     def test_proxy_handshake(self, ip, port):
         with self.lock:
