@@ -126,7 +126,7 @@ pnpm exec tsc --noEmit
 
 Nếu tiếp tục làm việc trong v0, có thể dùng **Publish**. Worker phải trỏ đến URL HTTPS của bản đã deploy, không dùng URL preview tạm thời.
 
-ZMap và scanner chạy tr����n VPS, **không chạy bên trong Vercel**. Vercel chỉ nhận dữ liệu, hiển thị dashboard và thực hiện các phép kiểm tra proxy theo yêu cầu.
+ZMap và scanner chạy tr������n VPS, **không chạy bên trong Vercel**. Vercel chỉ nhận dữ liệu, hiển thị dashboard và thực hiện các phép kiểm tra proxy theo yêu cầu.
 
 ## 5. Một VPS Linux: cài một lần, không nhập lại cấu hình
 
@@ -154,17 +154,19 @@ Ba chế độ khởi động, installer tự chọn:
 
 Máy không có init vẫn cài được: installer tạo lệnh `kien-proxy` (start/stop/restart/status/logs) và tự đăng ký khởi động lại qua `cron @reboot`, `/etc/rc.local`, hoặc `/etc/profile.d/kien-proxy.sh` — dùng cái nào máy có, và in ra cái đã dùng. Lưu ý: container không giữ tiến trình qua lần tạo lại container, nên nếu nhà cung cấp xoá container thì phải chạy lại lệnh cài.
 
-Máy mới tinh chỉ cần SSH vào và dán **một lệnh** (thay URL, mã VPS và token bằng thông tin ở bước trên):
+Máy mới tinh chỉ cần SSH vào, dán **một lệnh**, rồi dán token khi được hỏi (thay URL và mã VPS bằng thông tin ở bước trên):
 
 ```bash
+read -rsp "Dán token: " T && echo &&
 INSTALLER="$(mktemp /tmp/kien-proxy-install.XXXXXX)" &&
 curl -fsSL https://raw.githubusercontent.com/phantrongkien12/kien-proxy/master/scanner/install_worker.sh -o "$INSTALLER" &&
-sudo sh "$INSTALLER" --url https://your-app.vercel.app --node VPS-HN-01 --token TOKEN_RIENG_VUA_TAO
+sudo sh "$INSTALLER" --url https://your-app.vercel.app --node VPS-HN-01 --token "$T" &&
+unset T
 ```
 
-Không cần `git clone`, không cần SCP file cấu hình. Nút **Copy lệnh cài một lần** trên dashboard đã điền sẵn URL, mã VPS và token cho bạn.
+Không cần `git clone`, không cần SCP file cấu hình. Nút **Copy lệnh cài** trên dashboard đã điền sẵn URL và mã VPS; nút **Copy token** để bạn dán vào lời nhắc.
 
-Lệnh có token nên sẽ nằm trong lịch sử shell của VPS; chạy `history -c` sau khi cài nếu máy có nhiều người dùng. Muốn tránh hoàn toàn, dùng cách tải file bên dưới.
+Lệnh **không chứa token**, nên token không vào lịch sử shell và không lộ khi bạn dán lại output cho người khác. Nếu bạn cần token nhúng sẵn trong lệnh (script tự động), dùng mục "Cách khác" trên dashboard — nhưng khi đó token nằm trong lịch sử shell, phải chạy `history -c` sau khi cài.
 
 <details>
 <summary>Cách 2: dùng file cấu hình tải từ dashboard</summary>
