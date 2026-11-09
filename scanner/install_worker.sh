@@ -191,10 +191,13 @@ trap 'exit 1' HUP INT TERM
 
 fetch_file() {
   file=$1
+  # GitHub raw CDN caches for ~5 minutes; the stamp forces a fresh copy so a
+  # re-install always picks up the latest scanner instead of a stale one.
+  stamp=$(date +%s)
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL --proto '=https' --tlsv1.2 "$BASE/$file" -o "$STAGE/$file"
+    curl -fsSL --proto '=https' --tlsv1.2 "$BASE/$file?t=$stamp" -o "$STAGE/$file"
   else
-    wget -q -O "$STAGE/$file" "$BASE/$file"
+    wget -q -O "$STAGE/$file" "$BASE/$file?t=$stamp"
   fi
 }
 for file in geo_proxy_scanner.py worker_config.py zmap_blocklist.conf start_worker.sh; do
@@ -382,7 +385,7 @@ PROFILE
     chmod 644 /etc/profile.d/kien-proxy.sh
     AUTOSTART='/etc/profile.d/kien-proxy.sh (chạy khi có người đăng nhập)'
   fi
-  /usr/local/bin/kien-proxy start || true
+  /usr/local/bin/kien-proxy restart || true
   printf '%s\n' "Máy không có systemd/OpenRC nên dùng chế độ chạy nền. Tự chạy lại: $AUTOSTART" \
     'Xem log: sudo kien-proxy logs' \
     'Lần sau: sudo kien-proxy restart (không cần nhập lại cấu hình).'
