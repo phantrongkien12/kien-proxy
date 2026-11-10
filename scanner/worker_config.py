@@ -19,8 +19,8 @@ DEFAULT_CONFIG = _default_config_path()
 OPTION_NAMES = {
     'SCANNER_AUTO', 'SCANNER_MODE', 'SCANNER_COUNTRY', 'SCANNER_FOLLOW_RANDOM',
     'SCANNER_PORTS', 'SCANNER_THREADS', 'ZMAP_RATE', 'ZMAP_MAX_TARGETS',
-    'PATCH_MIN_SECONDS', 'PROXY_VERIFY_TIMEOUT',
-}
+    'PATCH_MIN_SECONDS', 'PROXY_VERIFY_TIMEOUT', 'SCANNER_DISABLE_ZMAP',
+    }
 
 
 class ConfigError(ValueError):
@@ -83,7 +83,7 @@ def normalize_config(data, generate_node=False):
             elif key == 'SCANNER_COUNTRY':
                 value = value.upper()
                 valid = bool(re.fullmatch(r'[A-Z]{2}', value))
-            elif key in ('SCANNER_AUTO', 'SCANNER_FOLLOW_RANDOM'):
+            elif key in ('SCANNER_AUTO', 'SCANNER_FOLLOW_RANDOM', 'SCANNER_DISABLE_ZMAP'):
                 valid = value in ('0', '1')
             elif key == 'SCANNER_PORTS':
                 ports = value.split(',')

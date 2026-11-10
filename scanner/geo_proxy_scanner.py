@@ -65,6 +65,18 @@ BATCH_SIZE = 200
 ZMAP_BLOCKLIST = Path(__file__).resolve().parent / "zmap_blocklist.conf"
 ZMAP_RATE = int(os.getenv("ZMAP_RATE", "1000"))
 ZMAP_MAX_TARGETS = int(os.getenv("ZMAP_MAX_TARGETS", "100000"))
+ZMAP_DISABLED = os.getenv("SCANNER_DISABLE_ZMAP", "").strip().lower() in {"1", "true", "yes"}
+
+
+def default_source_ip():
+    # ZMap phát gói raw với IP nguồn của interface. Sau NAT, IP đó là địa chỉ
+    # riêng nên phản hồi không thể quay về, và ZMap quét xong mà không thấy gì.
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("1.1.1.1", 80))
+            return probe.getsockname()[0]
+    except OSError:
+        return None
 PATCH_MIN_SECONDS = int(os.getenv("PATCH_MIN_SECONDS", "60"))
 PROXY_VERIFY_TIMEOUT = float(os.getenv("PROXY_VERIFY_TIMEOUT", "5"))
 # ZMap chỉ có bản Linux. Khi máy không có ZMap (Windows, macOS), scanner tự chuyển
@@ -413,8 +425,23 @@ class GeoProxyScanner:
         # ZMap cần stdbuf và raw socket của Linux; trên Windows luôn dùng connect scan
         # kể cả khi PATH có sẵn một bản zmap nào đó.
         if os.name != "nt" and shutil.which("zmap"):
-            return self.enqueue_zmap_results(cidrs)
+            if ZMAP_DISABLED:
+                console.print("[yellow][!] SCANNER_DISABLE_ZMAP đang bật: dùng connect scan thay ZMap.[/yellow]")
+            elif self.zmap_source_is_public():
+                return self.enqueue_zmap_results(cidrs)
+            else:
+                console.print("[yellow][!] IP nguồn là địa chỉ riêng (máy sau NAT): ZMap phát gói raw "
+                              "sẽ không nhận được phản hồi, chuyển sang connect scan.[/yellow]")
         return self.enqueue_connect_scan(cidrs)
+
+    def zmap_source_is_public(self):
+        source = default_source_ip()
+        if not source:
+            return True
+        try:
+            return ipaddress.IPv4Address(source).is_global
+        except ipaddress.AddressValueError:
+            return True
 
     def push_to_ledger(self, proxies_batch):
         if not proxies_batch:
