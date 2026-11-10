@@ -266,6 +266,11 @@ RestartSec=15
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
+# Worker mở 4400 luồng quét + 400 luồng connect. Mặc định systemd chỉ cho 15%
+# kernel.pid_max task và 1024 file descriptor, nên tiến trình chết vì
+# "can't start new thread" hoặc "Too many open files".
+TasksMax=infinity
+LimitNOFILE=1048576
 
 [Install]
 WantedBy=multi-user.target
@@ -292,6 +297,8 @@ respawn_max=0
 output_log="/var/log/kien-proxy.log"
 error_log="/var/log/kien-proxy.log"
 umask=0077
+# 4400 luồng quét cần nhiều file descriptor hơn mức mặc định 1024.
+rc_ulimit="-n 1048576"
 export KIEN_PROXY_CONFIG="$CONFIG"
 export PROXY_QUEUE_DIR="$STATE/queue"
 export SCANNER_AUTO=1
@@ -327,6 +334,8 @@ running() {
 
 run() {
   echo \$\$ > "\$PIDFILE"
+  # 4400 luồng quét cần nhiều file descriptor hơn mức mặc định 1024.
+  ulimit -n 1048576 2>/dev/null || true
   export KIEN_PROXY_CONFIG="\$CONFIG"
   export PROXY_QUEUE_DIR="\$STATE/queue"
   export SCANNER_AUTO=1
