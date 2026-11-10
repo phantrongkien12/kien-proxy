@@ -3,6 +3,7 @@ setlocal enabledelayedexpansion
 set "DIR=%~dp0"
 set "TASK=Kien Proxy"
 set "PIDFILE=%DIR%worker.pid"
+set "STOPFILE=%DIR%worker.stop"
 
 if /i "%~1"=="start" goto :start
 if /i "%~1"=="stop" goto :stop
@@ -12,6 +13,7 @@ if /i "%~1"=="logs" goto :logs
 goto :usage
 
 :start
+del "%STOPFILE%" >nul 2>&1
 schtasks /run /tn "%TASK%" >nul 2>&1
 if errorlevel 1 (
   echo Khong chay duoc tac vu "%TASK%". Chay lai install_worker.ps1.
@@ -21,6 +23,8 @@ echo Da khoi dong worker.
 exit /b 0
 
 :stop
+rem Dat co truoc khi kill, neu khong vong lap trong run-worker.ps1 se dung worker day len lai.
+echo stop >"%STOPFILE%"
 if not exist "%PIDFILE%" (
   echo Worker khong chay ^(khong thay worker.pid^).
   exit /b 0
@@ -40,6 +44,10 @@ exit /b 0
 :status
 if not exist "%PIDFILE%" (
   echo Worker dang dung.
+  if exist "%DIR%worker.err.log" (
+    echo Dong cuoi trong worker.err.log:
+    powershell -NoProfile -Command "Get-Content -LiteralPath '%DIR%worker.err.log' -Tail 3"
+  )
   exit /b 0
 )
 set /p PID=<"%PIDFILE%"
@@ -52,11 +60,16 @@ if errorlevel 1 (
 exit /b 0
 
 :logs
+if exist "%DIR%worker.err.log" (
+  echo --- worker.err.log ^(loi^) ---
+  powershell -NoProfile -Command "Get-Content -LiteralPath '%DIR%worker.err.log' -Tail 20"
+)
 if not exist "%DIR%worker.log" (
   echo Chua co worker.log.
   exit /b 0
 )
-powershell -NoProfile -Command "Get-Content -LiteralPath '%DIR%worker.log' -Tail 60 -Wait"
+echo --- worker.log ^(hoat dong^) ---
+powershell -NoProfile -Command "Get-Content -LiteralPath '%DIR%worker.log' -Tail 60"
 exit /b 0
 
 :usage

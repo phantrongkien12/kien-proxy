@@ -321,8 +321,14 @@ class GeoProxyScanner:
         threads = [threading.Thread(target=probe, daemon=True) for _ in range(CONNECT_SCAN_WORKERS)]
         for thread in threads:
             thread.start()
+        # Một mốc thời gian chung: join từng luồng với timeout riêng sẽ cộng dồn thành
+        # CONNECT_SCAN_WORKERS lần timeout khi mạng chậm, treo patch hàng chục phút.
+        deadline = time.monotonic() + CONNECT_SCAN_TIMEOUT * 4 + 30
         for thread in threads:
-            thread.join(timeout=CONNECT_SCAN_TIMEOUT + 5)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            thread.join(timeout=remaining)
         return candidates
 
     def enqueue_zmap_results(self, cidrs):
