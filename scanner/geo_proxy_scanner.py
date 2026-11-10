@@ -229,13 +229,26 @@ class GeoProxyScanner:
                     raise ZoneDownloadError(f"Không tải được danh mục CIDR: {e}") from e
                 console.print(f"[bold red][!][/bold red] Không cập nhật được danh mục; dùng danh mục hiện có: [yellow]{e}[/yellow]")
                 self.country_index_at = time.monotonic()
-        if not self.remaining_countries:
-            self.remaining_countries = self.country_codes[:]
-            secrets.SystemRandom().shuffle(self.remaining_countries)
-        cc = self.remaining_countries[-1]
-        cidrs = self.fetch_country_cidrs(cc, aggregated=True)
-        self.remaining_countries.pop()
-        return cc.upper(), cidrs
+        if not self.country_codes:
+            raise ZoneDownloadError("Danh mục CIDR trống")
+        # Consume the country before fetching. Some catalog entries are empty (the
+        # regional "ap" file returns HTTP 200 with no ranges), and peeking first
+        # would retry that same dead entry forever. Skip a few failures instead of
+        # stalling the whole pipeline on one bad zone.
+        last_error = None
+        for _ in range(8):
+            if not self.remaining_countries:
+                self.remaining_countries = self.country_codes[:]
+                secrets.SystemRandom().shuffle(self.remaining_countries)
+            cc = self.remaining_countries.pop()
+            try:
+                cidrs = self.fetch_country_cidrs(cc, aggregated=True)
+            except ZoneDownloadError as e:
+                last_error = e
+                console.print(f"[bold yellow][!][/bold yellow] Bỏ qua [bold green]{cc.upper()}[/bold green]: [yellow]{e}[/yellow]")
+                continue
+            return cc.upper(), cidrs
+        raise ZoneDownloadError(str(last_error) if last_error else "Không tìm được patch CIDR")
 
     def wait_between_patches(self, seconds):
         deadline = time.monotonic() + max(0, seconds)
@@ -620,7 +633,11 @@ class GeoProxyScanner:
     def run_pipeline(self):
         try:
             if self.run_mode == "country":
-                country_cidrs = self.fetch_country_cidrs(self.country_code)
+                try:
+                    country_cidrs = self.fetch_country_cidrs(self.country_code)
+                except ZoneDownloadError as e:
+                    console.print(f"[bold red][!][/bold red] [yellow]{e}[/yellow]")
+                    country_cidrs = []
                 if country_cidrs:
                     self.run_phase(f"COUNTRY ({self.country_code})", country_cidrs)
 
