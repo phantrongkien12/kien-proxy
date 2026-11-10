@@ -5,6 +5,7 @@ import { Field, Panel, PanelHead } from '@/components/ledger'
 import { useToast } from '@/components/toast'
 
 const installerUrl = 'https://raw.githubusercontent.com/phantrongkien12/kien-proxy/master/scanner/install_worker.sh'
+const windowsInstallerUrl = 'https://raw.githubusercontent.com/phantrongkien12/kien-proxy/master/scanner/install_worker.ps1'
 
 type WorkerSetupProps = {
   issued: { id: string; token: string }
@@ -37,6 +38,8 @@ sudo sh "$INSTALLER" --url ${ledgerUrl} --node ${issued.id} --token "$T" &&
 unset T`
 
   const inlineCommand = `INSTALLER="$(mktemp /tmp/kien-proxy-install.XXXXXX)" && curl -fsSL ${installerUrl} -o "$INSTALLER" && sudo sh "$INSTALLER" --url ${ledgerUrl} --node ${issued.id} --token ${issued.token}`
+
+  const windowsCommand = `irm ${windowsInstallerUrl} | iex`
 
   const fileCommand = `chmod 600 ./kien-proxy-worker.json &&
 INSTALLER="$(mktemp /tmp/kien-proxy-install.XXXXXX)" &&
@@ -95,6 +98,14 @@ sudo sh "$INSTALLER" --config ./kien-proxy-worker.json`
             <button type="button" className="btn btn-ghost" onClick={() => void copy(issued.token, 'token')}>Copy token</button>
             <button type="button" className="btn btn-ghost" onClick={onHide}>Đã lưu, ẩn đi</button>
           </div>
+        </div>
+        <div className="flex flex-col gap-2 border border-border px-3 py-3">
+          <p className="text-pretty text-muted-foreground">
+            Windows: mở PowerShell bằng quyền Administrator rồi chạy một lệnh này. Bộ cài dựng WSL2 và chạy worker
+            bên trong, vì ZMap chỉ có trên Linux. Lần đầu chạy sẽ hỏi URL, mã VPS và token.
+          </p>
+          <pre className="scroll-x border border-border bg-secondary px-3 py-3 font-mono text-sm leading-relaxed text-secondary-foreground">{windowsCommand}</pre>
+          <button type="button" className="btn btn-ghost self-start" onClick={() => void copy(windowsCommand, 'lệnh cài Windows')}>Copy lệnh cài Windows</button>
         </div>
         <p className="text-pretty text-muted-foreground">
           Không cần <code className="font-mono text-foreground">git clone</code> và không cần chuyển file lên máy.

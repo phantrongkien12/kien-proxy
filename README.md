@@ -170,6 +170,30 @@ Không cần `git clone`, không cần SCP file cấu hình. Nút **Copy lệnh 
 
 Lệnh **không chứa token**, nên token không vào lịch sử shell và không lộ khi bạn dán lại output cho người khác. Nếu bạn cần token nhúng sẵn trong lệnh (script tự động), dùng mục "Cách khác" trên dashboard — nhưng khi đó token nằm trong lịch sử shell, phải chạy `history -c` sau khi cài.
 
+### Trên Windows
+
+Scanner cần **ZMap**, mà ZMap chỉ có trên Linux vì phải mở raw socket — không có bản Windows native. Bộ cài Windows vì vậy dựng **WSL2** rồi chạy installer Linux bên trong; WSL2 là kernel Linux thật nên ZMap chạy bình thường.
+
+Mở **PowerShell bằng quyền Administrator** (chuột phải > Run as administrator) rồi dán **một lệnh**:
+
+```powershell
+irm https://raw.githubusercontent.com/phantrongkien12/kien-proxy/master/scanner/install_worker.ps1 | iex
+```
+
+Lần đầu chạy, bộ cài sẽ hỏi URL dashboard, mã VPS và token (token nhập ẩn). Những lần sau chạy lại đúng lệnh đó để cập nhật mã worker — cấu hình và token được giữ nguyên.
+
+Nếu máy chưa có WSL2, bộ cài bật tính năng rồi yêu cầu **khởi động lại Windows**; sau khi khởi động lại, chạy lại đúng lệnh trên để cài Ubuntu và worker. Cần Windows 10 build 19041 trở lên hoặc Windows 11.
+
+Điều khiển worker từ PowerShell:
+
+```powershell
+wsl -d Ubuntu -u root -- kien-proxy status
+wsl -d Ubuntu -u root -- kien-proxy logs
+wsl -d Ubuntu -u root -- kien-proxy restart
+```
+
+Bộ cài tạo tác vụ **Kien Proxy** trong Task Scheduler để worker tự chạy khi bạn đăng nhập Windows. Lưu ý: WSL2 chỉ chạy khi Windows đang bật — tắt máy hoặc để máy ngủ thì worker dừng, khác với VPS Linux chạy 24/7. Muốn quét liên tục thì dùng VPS Linux.
+
 <details>
 <summary>Cách 2: dùng file cấu hình tải từ dashboard</summary>
 
@@ -349,7 +373,7 @@ Nút **Xóa proxy chết** chỉ xóa bản ghi chết chưa có dữ liệu g�
 | ZMap báo quyền raw socket | `start_worker.sh` yêu cầu root; không chỉ cài ZMap vào một môi trường không có quyền mạng tương ứng. |
 | Worker có lô `.ready` nhưng kho chưa tăng | Xem HTTP status/log gửi lại; giữ nguyên queue, không xóa để “reset”. |
 | Không tải được dải IP | Kiểm tra kết nối tới IPdeny; scanner sẽ chờ và thử lại. |
-| Proxy bị đánh dấu Chết | Đọc lý do kiểm tra, xem kết nối outbound/TLS và thông tin xác thực; thử lại khi mạng đã ổn định. |
+| Proxy bị đánh dấu Chết | Đọc lý do kiểm tra, xem kết nối outbound/TLS và thông tin xác thực; thử lại khi mạng đã ��n định. |
 
 ## 10. Bảo mật và cấu trúc mã nguồn
 
@@ -367,6 +391,7 @@ lib/supabase/               Client Supabase server/browser và session proxy
 lib/probe.ts                Phép kiểm tra TCP/TLS cho proxy
 scanner/geo_proxy_scanner.py Scanner và queue gửi lại
 scanner/install_worker.sh    Cài một lần, tự chạy bằng systemd/OpenRC
+scanner/install_worker.ps1   Bộ cài Windows: dựng WSL2 rồi chạy installer Linux
 scanner/worker_config.py     Kiểm tra/lưu/nạp cấu hình bí mật, giữ mã VPS
 scanner/test_worker_config.py Kiểm thử độc lập, không gửi dữ liệu vào kho
 scanner/start_worker.sh      Khởi động thủ công Debian/Ubuntu
