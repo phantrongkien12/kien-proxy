@@ -6,6 +6,8 @@ $env:KIEN_PROXY_CONFIG = Join-Path $here 'worker.json'
 $env:PROXY_QUEUE_DIR = Join-Path $here 'queue'
 $env:SCANNER_AUTO = '1'
 $env:PYTHONUNBUFFERED = '1'
+# Bắt Python ghi log bằng UTF-8, nếu không tiếng Việt sẽ lỗi font hoặc làm worker thoát.
+$env:PYTHONUTF8 = '1'
 # Windows tạo luồng nặng hơn Linux; 800 luồng xác minh là mức chạy êm trên máy phổ thông.
 if (-not $env:SCANNER_THREADS) { $env:SCANNER_THREADS = '800' }
 
@@ -31,8 +33,14 @@ $errlog = Join-Path $here 'worker.err.log'
 $pidFile = Join-Path $here 'worker.pid'
 $stopFile = Join-Path $here 'worker.stop'
 
+# Add-Content mặc định ghi bằng codepage ANSI trên PowerShell 5.1, sẽ trộn hai bảng mã
+# vào cùng một file với output UTF-8 của Python. Ghi thẳng UTF-8 không BOM.
+function Write-ErrLog([string]$message) {
+  [System.IO.File]::AppendAllText($errlog, "$message`r`n", [System.Text.UTF8Encoding]::new($false))
+}
+
 if (-not $python) {
-  Add-Content -LiteralPath $errlog -Value 'Không tìm thấy Python 3. Chạy lại install_worker.ps1.'
+  Write-ErrLog 'Không tìm thấy Python 3. Chạy lại install_worker.ps1.'
   exit 1
 }
 
@@ -55,7 +63,7 @@ while (-not (Test-Path -LiteralPath $stopFile)) {
 
   # Thoát nhanh nghĩa là lỗi cấu hình hoặc Python, không phải sự cố mạng: giãn dần để log không phình.
   if (((Get-Date) - $started).TotalSeconds -lt 30) { $delay = [Math]::Min($delay * 2, 300) } else { $delay = 10 }
-  Add-Content -LiteralPath $errlog -Value "$(Get-Date -Format s) worker thoát (mã $($process.ExitCode)); chạy lại sau $delay giây."
+  Write-ErrLog "$(Get-Date -Format s) worker thoát (mã $($process.ExitCode)); chạy lại sau $delay giây."
   Start-Sleep -Seconds $delay
 }
 Remove-Item -LiteralPath $stopFile -ErrorAction SilentlyContinue

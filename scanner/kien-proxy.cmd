@@ -42,11 +42,12 @@ call "%~f0" start
 exit /b 0
 
 :status
+chcp 65001 >nul
 if not exist "%PIDFILE%" (
   echo Worker dang dung.
   if exist "%DIR%worker.err.log" (
     echo Dong cuoi trong worker.err.log:
-    powershell -NoProfile -Command "Get-Content -LiteralPath '%DIR%worker.err.log' -Tail 3"
+    powershell -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-Content -LiteralPath '%DIR%worker.err.log' -Tail 3 -Encoding UTF8"
   )
   exit /b 0
 )
@@ -60,16 +61,18 @@ if errorlevel 1 (
 exit /b 0
 
 :logs
+rem worker.log la UTF-8; console Windows mac dinh doc bang codepage ANSI nen phai ep UTF-8 ca khi doc lan khi hien thi.
+chcp 65001 >nul
 if exist "%DIR%worker.err.log" (
   echo --- worker.err.log ^(loi^) ---
-  powershell -NoProfile -Command "Get-Content -LiteralPath '%DIR%worker.err.log' -Tail 20"
+  powershell -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-Content -LiteralPath '%DIR%worker.err.log' -Tail 20 -Encoding UTF8"
 )
 if not exist "%DIR%worker.log" (
   echo Chua co worker.log.
   exit /b 0
 )
-echo --- worker.log ^(hoat dong^) ---
-powershell -NoProfile -Command "Get-Content -LiteralPath '%DIR%worker.log' -Tail 60"
+echo --- worker.log ^(hoat dong) ---
+powershell -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-Content -LiteralPath '%DIR%worker.log' -Tail 60 -Encoding UTF8"
 exit /b 0
 
 :usage
