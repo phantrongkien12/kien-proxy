@@ -13,6 +13,7 @@ import threading
 import hashlib
 import re
 import secrets
+import signal
 import shutil
 import subprocess
 import tempfile
@@ -173,6 +174,9 @@ class GeoProxyScanner:
         self.sync_lock = threading.Lock()
         self.is_running = True
         self.phase_done = threading.Event()
+        if threading.current_thread() is threading.main_thread():
+            for sig in (signal.SIGTERM, signal.SIGINT):
+                signal.signal(sig, self._handle_stop_signal)
         self.last_flush = time.monotonic()
         self.sent_count = 0
         self.checked_count = 0
@@ -186,6 +190,14 @@ class GeoProxyScanner:
         QUEUE_DIR.mkdir(parents=True, exist_ok=True)
         self.sync_thread = threading.Thread(target=self.background_sync_worker, daemon=True)
         self.sync_thread.start()
+
+    def _handle_stop_signal(self, signum, frame):
+        # systemd gửi SIGTERM. Đặt cờ dừng ngay tại đây thay vì đợi ngăn xếp gỡ
+        # ra tới run_pipeline: các luồng quét phải ngừng rút hàng đợi sớm, nếu
+        # không tiến trình bị SIGKILL sau TimeoutStopSec.
+        self.is_running = False
+        self.phase_done.set()
+        raise KeyboardInterrupt
 
     def fetch_country_cidrs(self, cc, aggregated=False):
         console.print(f"[bold blue][*][/bold blue] Đang lấy danh sách dải CIDR cho quốc gia: [bold green]{cc}[/bold green]...")
@@ -427,7 +439,7 @@ class GeoProxyScanner:
             return False
 
     def background_sync_worker(self):
-        while True:
+        while self.is_running:
             with self.lock:
                 if self.live_proxies and time.monotonic() - self.last_flush >= 15:
                     self.check_batch_flush(force=True)
@@ -542,7 +554,7 @@ class GeoProxyScanner:
                 if self._read_exactly(sock, 8)[1] != 0x5A:
                     raise OSError("Proxy từ chối kết nối")
             else:
-                raise OSError("Giao thức chưa hỗ trợ kiểm tra")
+                raise OSError("Giao thức chưa hỗ trợ ki���m tra")
             return sock
         except Exception:
             sock.close()

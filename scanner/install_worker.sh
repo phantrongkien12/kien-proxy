@@ -260,7 +260,7 @@ Environment=PROXY_QUEUE_DIR=$STATE/queue
 Environment=SCANNER_AUTO=1
 ExecStart=$PYTHON -u $APP/geo_proxy_scanner.py
 KillSignal=SIGINT
-TimeoutStopSec=30
+TimeoutStopSec=120
 Restart=on-failure
 RestartSec=15
 UMask=0077
