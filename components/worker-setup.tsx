@@ -101,8 +101,9 @@ sudo sh "$INSTALLER" --config ./kien-proxy-worker.json`
         </div>
         <div className="flex flex-col gap-2 border border-border px-3 py-3">
           <p className="text-pretty text-muted-foreground">
-            Windows: mở PowerShell bằng quyền Administrator rồi chạy một lệnh này. Bộ cài dựng WSL2 và chạy worker
-            bên trong, vì ZMap chỉ có trên Linux. Lần đầu chạy sẽ hỏi URL, mã VPS và token.
+            Windows: mở PowerShell bằng quyền Administrator rồi chạy một lệnh này. Worker chạy native trên Windows,
+            không cần WSL — bộ cài tự cài Python 3 nếu máy chưa có. Lần đầu chạy sẽ hỏi URL, mã VPS và token.
+            Vì Windows không có ZMap, worker quét cổng chậm hơn VPS Linux.
           </p>
           <pre className="scroll-x border border-border bg-secondary px-3 py-3 font-mono text-sm leading-relaxed text-secondary-foreground">{windowsCommand}</pre>
           <button type="button" className="btn btn-ghost self-start" onClick={() => void copy(windowsCommand, 'lệnh cài Windows')}>Copy lệnh cài Windows</button>

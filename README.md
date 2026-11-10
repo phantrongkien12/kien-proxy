@@ -29,8 +29,8 @@ Kho không tự được điền bằng seed. Muốn thấy proxy thật, cần 
 ### Scanner
 
 - VPS Linux có systemd/OpenRC; installer hỗ trợ các package manager phổ biến. Startup thủ công cũ dành cho Debian/Ubuntu.
-- Python 3, thư viện `requests` cho Python hệ thống và ZMap; installer tự cài nếu kho gói của distro có sẵn.
-- Quyền root/sudo và raw socket vì ZMap cần thao tác mạng tương ứng.
+- Python 3 và thư viện `requests`; installer tự cài nếu kho gói của distro có sẵn.
+- Trên Linux, ZMap giúp tìm cổng mở nhanh; cần root/sudo và raw socket. Máy không có ZMap thì scanner tự quét bằng `connect()` thuần Python — chậm hơn nhưng không cần quyền đặc biệt, và đây chính là cách chạy trên Windows.
 - Kết nối đến app đã deploy, IPdeny và đích kiểm tra TLS.
 
 Scanner chỉ nhận một cổng là proxy sau khi bắt tay và **gửi CONNECT thật tới `example.com:443`**, rồi **bọc TLS có xác thực chứng chỉ** qua tunnel đó — cùng chuẩn với phép kiểm tra của dashboard (`lib/probe.ts`). Cổng mở hoặc server chỉ "chào hỏi" mà không chuyển tiếp traffic không được tính là proxy sống, nên số proxy tìm được sẽ ít hơn nhưng tất cả đều dùng được thật.
@@ -172,7 +172,7 @@ Lệnh **không chứa token**, nên token không vào lịch sử shell và kh�
 
 ### Trên Windows
 
-Scanner cần **ZMap**, mà ZMap chỉ có trên Linux vì phải mở raw socket — không có bản Windows native. Bộ cài Windows vì vậy dựng **WSL2** rồi chạy installer Linux bên trong; WSL2 là kernel Linux thật nên ZMap chạy bình thường.
+Windows không có ZMap (ZMap cần raw socket của Linux), nên worker chạy **native trên Windows** và tự quét cổng bằng `connect()` thuần Python. Không cần WSL, không cần Docker, không cần quyền mạng đặc biệt — chỉ cần Python 3, và bộ cài tự cài nếu máy chưa có.
 
 Mở **PowerShell bằng quyền Administrator** (chuột phải > Run as administrator) rồi dán **một lệnh**:
 
@@ -182,17 +182,17 @@ irm https://raw.githubusercontent.com/phantrongkien12/kien-proxy/master/scanner/
 
 Lần đầu chạy, bộ cài sẽ hỏi URL dashboard, mã VPS và token (token nhập ẩn). Những lần sau chạy lại đúng lệnh đó để cập nhật mã worker — cấu hình và token được giữ nguyên.
 
-Nếu máy chưa có WSL2, bộ cài bật tính năng rồi yêu cầu **khởi động lại Windows**; sau khi khởi động lại, chạy lại đúng lệnh trên để cài Ubuntu và worker. Cần Windows 10 build 19041 trở lên hoặc Windows 11.
+Bộ cài đặt vào `%ProgramData%\KienProxy` và tạo tác vụ **Kien Proxy** trong Task Scheduler để worker tự chạy khi bạn đăng nhập Windows.
 
-Điều khiển worker từ PowerShell:
+Điều khiển worker:
 
 ```powershell
-wsl -d Ubuntu -u root -- kien-proxy status
-wsl -d Ubuntu -u root -- kien-proxy logs
-wsl -d Ubuntu -u root -- kien-proxy restart
+& "$env:ProgramData\KienProxy\kien-proxy.cmd" status
+& "$env:ProgramData\KienProxy\kien-proxy.cmd" logs
+& "$env:ProgramData\KienProxy\kien-proxy.cmd" restart
 ```
 
-Bộ cài tạo tác vụ **Kien Proxy** trong Task Scheduler để worker tự chạy khi bạn đăng nhập Windows. Lưu ý: WSL2 chỉ chạy khi Windows đang bật — tắt máy hoặc để máy ngủ thì worker dừng, khác với VPS Linux chạy 24/7. Muốn quét liên tục thì dùng VPS Linux.
+> Không có ZMap nên worker trên Windows chậm hơn VPS Linux đáng kể: mỗi cổng là một kết nối TCP đầy đủ thay vì một gói SYN. Muốn nhanh hơn, giảm `SCANNER_PORTS` hoặc tăng `CONNECT_SCAN_WORKERS` trong `run-worker.ps1`. Máy cũng phải đang bật — tắt máy hoặc để máy ngủ thì worker dừng. Muốn quét liên tục 24/7 thì dùng VPS Linux.
 
 <details>
 <summary>Cách 2: dùng file cấu hình tải từ dashboard</summary>
@@ -319,6 +319,9 @@ Startup cũ `sudo env LEDGER_URL='https://your-app.vercel.app' bash start_worker
 | `SCANNER_THREADS` | `400` | Số luồng xác minh, từ 1 đến 2000 |
 | `ZMAP_RATE` | `1000` | Giới hạn gói/giây cho ZMap |
 | `ZMAP_MAX_TARGETS` | `100000` | Giới hạn mục tiêu mỗi lượt ZMap trên một cổng |
+| `CONNECT_SCAN_WORKERS` | `400` | Số luồng song song khi quét cổng bằng `connect()` (máy không có ZMap) |
+| `CONNECT_SCAN_MAX_TARGETS` | `20000` | Giới hạn số cặp IP:cổng mỗi lượt quét connect |
+| `CONNECT_SCAN_TIMEOUT` | `1.5` | Timeout mỗi lần connect, tính bằng giây |
 | `PATCH_MIN_SECONDS` | `60` | Khoảng thời gian tối thiểu cho một vòng patch random |
 | `PROXY_VERIFY_TIMEOUT` | `5` | Timeout xác minh của scanner, tính bằng giây |
 | `PROXY_QUEUE_DIR` | `/var/lib/kien-proxy/queue` khi cài dịch vụ | Nơi giữ lô đang chờ gửi; cách chạy cũ mặc định `proxy_queue/` cạnh scanner |
@@ -369,7 +372,8 @@ Nút **Xóa proxy chết** chỉ xóa bản ghi chết chưa có dữ liệu g�
 | HTTP 400 khi ingest | JSON sai, lô rỗng, quá 500 proxy hoặc mã VPS/batch không hợp lệ. |
 | HTTP 500, thiếu bảng hoặc function | Đang dùng Supabase sai project hoặc chưa khôi phục đủ schema/RPC. Kiểm tra service-role key ở server. |
 | Không đăng nhập được | Email/mật khẩu, xác nhận email, cấu hình callback hoặc giới hạn gửi email của Supabase. |
-| Không tìm thấy ZMap/requests | Chạy installer bằng root; kiểm tra kho gói của distro có ZMap/requests (RHEL có thể cần EPEL; Alpine có thể cần community), rồi chạy lại cùng lệnh. |
+| Không tìm thấy `requests` | Chạy installer bằng root; kiểm tra kho gói của distro có `requests` (RHEL có thể cần EPEL; Alpine có thể cần community), rồi chạy lại cùng lệnh. |
+| Không tìm thấy ZMap | Không bắt buộc: scanner tự chuyển sang quét bằng `connect()`. Muốn dùng ZMap thì cài gói `zmap` (RHEL/Alma/Rocky/Amazon Linux cần EPEL). |
 | ZMap báo quyền raw socket | `start_worker.sh` yêu cầu root; không chỉ cài ZMap vào một môi trường không có quyền mạng tương ứng. |
 | Worker có lô `.ready` nhưng kho chưa tăng | Xem HTTP status/log gửi lại; giữ nguyên queue, không xóa để “reset”. |
 | Không tải được dải IP | Kiểm tra kết nối tới IPdeny; scanner sẽ chờ và thử lại. |
@@ -391,7 +395,9 @@ lib/supabase/               Client Supabase server/browser và session proxy
 lib/probe.ts                Phép kiểm tra TCP/TLS cho proxy
 scanner/geo_proxy_scanner.py Scanner và queue gửi lại
 scanner/install_worker.sh    Cài một lần, tự chạy bằng systemd/OpenRC
-scanner/install_worker.ps1   Bộ cài Windows: dựng WSL2 rồi chạy installer Linux
+scanner/install_worker.ps1   Bộ cài Windows native: Python 3 + tác vụ tự chạy, không cần WSL
+scanner/run-worker.ps1       Chạy worker trên Windows (tác vụ Kien Proxy gọi file này)
+scanner/kien-proxy.cmd       Điều khiển worker trên Windows: start/stop/restart/status/logs
 scanner/worker_config.py     Kiểm tra/lưu/nạp cấu hình bí mật, giữ mã VPS
 scanner/test_worker_config.py Kiểm thử độc lập, không gửi dữ liệu vào kho
 scanner/start_worker.sh      Khởi động thủ công Debian/Ubuntu

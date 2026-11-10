@@ -8,7 +8,14 @@ import uuid
 from pathlib import Path
 from urllib.parse import urlsplit
 
-DEFAULT_CONFIG = Path('/etc/kien-proxy/worker.json')
+def _default_config_path():
+    if os.name == 'nt':
+        base = os.getenv('ProgramData') or r'C:\ProgramData'
+        return Path(base) / 'KienProxy' / 'worker.json'
+    return Path('/etc/kien-proxy/worker.json')
+
+
+DEFAULT_CONFIG = _default_config_path()
 OPTION_NAMES = {
     'SCANNER_AUTO', 'SCANNER_MODE', 'SCANNER_COUNTRY', 'SCANNER_FOLLOW_RANDOM',
     'SCANNER_PORTS', 'SCANNER_THREADS', 'ZMAP_RATE', 'ZMAP_MAX_TARGETS',

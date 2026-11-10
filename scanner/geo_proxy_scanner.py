@@ -66,6 +66,12 @@ ZMAP_RATE = int(os.getenv("ZMAP_RATE", "1000"))
 ZMAP_MAX_TARGETS = int(os.getenv("ZMAP_MAX_TARGETS", "100000"))
 PATCH_MIN_SECONDS = int(os.getenv("PATCH_MIN_SECONDS", "60"))
 PROXY_VERIFY_TIMEOUT = float(os.getenv("PROXY_VERIFY_TIMEOUT", "5"))
+# ZMap chỉ có bản Linux. Khi máy không có ZMap (Windows, macOS), scanner tự chuyển
+# sang quét cổng bằng connect() thuần Python: chậm hơn nhiều nhưng không cần raw
+# socket, không cần quyền root và không phải cài thêm gì.
+CONNECT_SCAN_WORKERS = int(os.getenv("CONNECT_SCAN_WORKERS", "400"))
+CONNECT_SCAN_MAX_TARGETS = int(os.getenv("CONNECT_SCAN_MAX_TARGETS", "20000"))
+CONNECT_SCAN_TIMEOUT = float(os.getenv("CONNECT_SCAN_TIMEOUT", "1.5"))
 VERIFY_HOST = "example.com"
 VERIFY_PORT = 443
 ZONE_INDEX_URL = "https://www.ipdeny.com/ipblocks/data/aggregated/"
@@ -253,6 +259,72 @@ class GeoProxyScanner:
                 raise RuntimeError("PATCH_MIN_SECONDS không hợp lệ")
             self.wait_between_patches(PATCH_MIN_SECONDS - (time.monotonic() - started))
 
+    def _port_open(self, ip, port):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(CONNECT_SCAN_TIMEOUT)
+            try:
+                return sock.connect_ex((ip, port)) == 0
+            except OSError:
+                return False
+
+    def connect_scan_targets(self, cidrs):
+        targets = []
+        for cidr in cidrs:
+            try:
+                network = ipaddress.ip_network(cidr, strict=False)
+            except ValueError:
+                continue
+            for ip in network:
+                if not ip.is_global:
+                    continue
+                for port in self.ports:
+                    targets.append((str(ip), port))
+                    if len(targets) >= CONNECT_SCAN_MAX_TARGETS:
+                        return targets
+        return targets
+
+    def enqueue_connect_scan(self, cidrs):
+        if not (1 <= CONNECT_SCAN_WORKERS <= 5000 and 1 <= CONNECT_SCAN_MAX_TARGETS <= 1000000):
+            raise RuntimeError("CONNECT_SCAN_WORKERS hoặc CONNECT_SCAN_MAX_TARGETS không hợp lệ")
+        targets = self.connect_scan_targets(cidrs)
+        if not targets:
+            return 0
+        console.print(f"[bold blue][*][/bold blue] Không có ZMap; quét cổng bằng connect() thuần Python: "
+                      f"[bold yellow]{len(targets):,}[/bold yellow] mục tiêu, "
+                      f"[bold yellow]{CONNECT_SCAN_WORKERS}[/bold yellow] luồng song song")
+        candidates = 0
+        counter_lock = threading.Lock()
+        work = queue.Queue()
+        for target in targets:
+            work.put(target)
+        for _ in range(CONNECT_SCAN_WORKERS):
+            work.put(None)
+
+        def probe():
+            nonlocal candidates
+            while self.is_running:
+                item = work.get()
+                if item is None:
+                    return
+                ip, port = item
+                if not self._port_open(ip, port):
+                    continue
+                while self.is_running:
+                    try:
+                        self.ip_queue.put((ip, port), timeout=0.5)
+                        with counter_lock:
+                            candidates += 1
+                        break
+                    except queue.Full:
+                        continue
+
+        threads = [threading.Thread(target=probe, daemon=True) for _ in range(CONNECT_SCAN_WORKERS)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=CONNECT_SCAN_TIMEOUT + 5)
+        return candidates
+
     def enqueue_zmap_results(self, cidrs):
         if not shutil.which("zmap"):
             raise RuntimeError("Chưa cài ZMap. Trên Debian/Ubuntu: sudo apt-get install zmap")
@@ -305,6 +377,13 @@ class GeoProxyScanner:
                     detail = log.read_text(encoding="utf-8", errors="replace")[-1000:]
                     raise RuntimeError(f"ZMap dừng với mã {code} (port {port}): {detail}")
         return candidates
+
+    def enqueue_candidates(self, cidrs):
+        # ZMap cần stdbuf và raw socket của Linux; trên Windows luôn dùng connect scan
+        # kể cả khi PATH có sẵn một bản zmap nào đó.
+        if os.name != "nt" and shutil.which("zmap"):
+            return self.enqueue_zmap_results(cidrs)
+        return self.enqueue_connect_scan(cidrs)
 
     def push_to_ledger(self, proxies_batch):
         if not proxies_batch:
@@ -520,8 +599,8 @@ class GeoProxyScanner:
         with ThreadPoolExecutor(max_workers=self.max_threads) as executor:
             workers = [executor.submit(self.worker) for _ in range(self.max_threads)]
             try:
-                total = self.enqueue_zmap_results(cidrs)
-                console.print(f"[bold blue][*][/bold blue] ZMap tìm thấy [bold green]{total}[/bold green] cổng mở; đợi kiểm tra proxy hoàn tất...")
+                total = self.enqueue_candidates(cidrs)
+                console.print(f"[bold blue][*][/bold blue] Tìm thấy [bold green]{total}[/bold green] cổng mở; đợi kiểm tra proxy hoàn tất...")
             except KeyboardInterrupt:
                 console.print("\n[bold red][!] Dừng quét theo yêu cầu...[/bold red]")
                 self.is_running = False
